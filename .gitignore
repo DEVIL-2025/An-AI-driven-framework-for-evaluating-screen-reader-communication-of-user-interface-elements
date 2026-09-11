@@ -1,0 +1,19 @@
+# Environment variables & secrets
+.env
+
+# Generated Audit Reports
+reports/
+*.json
+!synchronized_output.json
+!accessibility_report.json
+!ai_enriched_report.json
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Logs
+*.log
+nvda_log.txt

@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&family=Quicksand:wght@300..700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Nunito", "Quicksand", "cera-round-pro", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  font-family: "Nunito", "Quicksand", "cera-round-pro", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #1e1b4b;
+  background-color: #f5f3ff;
+  min-height: 100vh;
+}
+
+/* Clearbit / Modern Light Mesh Background */
+.bg-mesh-light {
+  background: 
+    radial-gradient(at 10% 10%, rgba(224, 231, 255, 0.8) 0px, transparent 50%),
+    radial-gradient(at 90% 15%, rgba(199, 210, 254, 0.7) 0px, transparent 50%),
+    radial-gradient(at 80% 50%, rgba(216, 180, 254, 0.45) 0px, transparent 60%),
+    radial-gradient(at 15% 75%, rgba(224, 231, 255, 0.6) 0px, transparent 50%),
+    radial-gradient(at 50% 90%, rgba(199, 210, 254, 0.5) 0px, transparent 55%),
+    #f8fafc;
+}
+
+/* Glassmorphism Card Style */
+.glass-card {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 10px 30px -5px rgba(99, 102, 241, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
+}
+
+.glass-card-hover {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card-hover:hover {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 20px 35px -10px rgba(99, 102, 241, 0.14), 0 6px 16px -2px rgba(0, 0, 0, 0.04);
+  transform: translateY(-2px);
+}
+
+/* Vibrant Blue Button matching reference */
+.btn-primary-gradient {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.35);
+  transition: all 0.2s ease;
+}
+
+.btn-primary-gradient:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  box-shadow: 0 6px 20px 0 rgba(37, 99, 235, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-primary-gradient:active:not(:disabled) {
+  transform: translateY(0);
+}
+
