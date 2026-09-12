@@ -78,9 +78,11 @@ export async function startAudit(url, tabLimit = 100, enableAi = true, onStatusU
 
   // 2. Poll Status (GET /api/audits/{audit_id})
   const POLL_INTERVAL_MS = 1500
-  const MAX_POLL_ATTEMPTS = 200 // ~5 minutes max
+  // Dynamically compute maximum poll attempts based on tab limit (minimum 10 minutes buffer)
+  const estimatedTimeoutSec = Math.max(600, (Number(tabLimit) || 100) * 6 + 120)
+  const maxPollAttempts = Math.ceil((estimatedTimeoutSec * 1000) / POLL_INTERVAL_MS)
 
-  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
 
     let statusRes

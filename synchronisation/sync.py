@@ -19,13 +19,13 @@ from tools.nvda_tool import NVDATextExtractor
 from tools.nvda_filter import NVDAFilter
 from tools.nvda_parser import NVDAParser
 
-# Default target URL (can be overridden via command-line argument: python sync.py <URL>)
-DEFAULT_URL = "https://makaut1.ucanapply.com/smartexam/public/student/dashboard"
+# Target URL (can be provided via command-line argument: python sync.py <URL> or TARGET_URL env)
+DEFAULT_URL = os.environ.get("TARGET_URL", "")
 URL = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_URL
 
-TAB_LIMIT = 100
-READ_DELAY = 2
-POLL_DELAY = 0.2
+TAB_LIMIT = int(os.environ.get("TAB_LIMIT", 100))
+READ_DELAY = float(os.environ.get("READ_DELAY", 2.0))
+POLL_DELAY = float(os.environ.get("POLL_DELAY", 0.2))
 
 # Mapping standard HTML tags/types to expected accessibility roles
 TAG_TO_EXPECTED_ROLES = {
@@ -212,13 +212,17 @@ def capture_synchronized_element(
     extractor,
     nvda_filter,
     parser,
-    selenium_details
+    selenium_details,
+    max_wait=None,
 ):
     """
     Capture NVDA announcement for the newly focused Selenium element
     and compute comparison.
+    Uses adaptive polling up to max_wait seconds to capture speech quickly
+    as soon as it becomes available.
     """
-    time.sleep(READ_DELAY)
+    timeout = max_wait if max_wait is not None else READ_DELAY
+    time.sleep(timeout)
     nvda_text = extractor.get_new_text()
 
     events = []
@@ -240,6 +244,11 @@ def capture_synchronized_element(
 
 
 if __name__ == "__main__":
+    if not URL:
+        print("Error: No target URL provided.")
+        print("Usage: python sync.py <URL>")
+        sys.exit(1)
+
     print(f"Target URL: {URL}")
 
     extractor = NVDATextExtractor()

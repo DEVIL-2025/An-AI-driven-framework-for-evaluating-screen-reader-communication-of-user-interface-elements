@@ -14,6 +14,12 @@ export default function ViolationDetails({ violation }) {
     evidence,
   } = violation
 
+  const engineName =
+    violation.engine ||
+    violation.ai_metadata?.model ||
+    violation.ai_metadata?.provider ||
+    'Gemini AI'
+
   return (
     <div className="mt-5 pt-5 border-t border-slate-200/80 space-y-5">
       {/* 1. Header meta banner */}
@@ -26,7 +32,7 @@ export default function ViolationDetails({ violation }) {
         </div>
         <div className="flex items-center gap-4 text-slate-700 font-medium">
           <span>Scope: <strong className="text-slate-950 font-bold">{violation.scope || 'ELEMENT'}</strong></span>
-          <span>Engine: <strong className="text-slate-950 font-bold">Google Gemini</strong></span>
+          <span>Engine: <strong className="text-slate-950 font-bold">{engineName}</strong></span>
         </div>
       </div>
 
@@ -41,7 +47,7 @@ export default function ViolationDetails({ violation }) {
             User Impact
           </div>
           <p className="text-xs text-slate-900 leading-relaxed font-medium">
-            {user_impact || "Screen reader users encountering an unlabeled graphic link will only hear 'logo.' without understanding what organization or site the logo represents or where the link navigates."}
+            {user_impact || "User impact details not provided for this finding."}
           </p>
         </div>
 
@@ -54,7 +60,7 @@ export default function ViolationDetails({ violation }) {
             AI Rationale
           </div>
           <p className="text-xs text-slate-900 leading-relaxed font-medium">
-            {ai_rationale || "In step 1, Selenium inspects an anchor tag with class 'navbar-brand', and NVDA announces 'logo. ... Unlabeled graphic'. This indicates the image inside or the link itself lacks an appropriate alt text or accessible name, relying on generic fallback text ('logo.')."}
+            {ai_rationale || "AI rationale details not provided for this finding."}
           </p>
         </div>
       </div>
@@ -68,7 +74,7 @@ export default function ViolationDetails({ violation }) {
           WCAG Normative Context
         </div>
         <p className="text-xs text-slate-900 leading-relaxed font-medium">
-          {wcag_context || "WCAG 2.1 Success Criterion 1.1.1 Non-Text Content requires all non-text content that is presented to the user has a text alternative that serves the equivalent purpose."}
+          {wcag_context || "WCAG normative context not specified."}
         </p>
       </div>
 
@@ -83,7 +89,7 @@ export default function ViolationDetails({ violation }) {
             Remediation Recommendation
           </div>
           <p className="text-xs text-slate-700 leading-relaxed font-normal">
-            {recommendation || "Provide a descriptive 'alt' attribute on the inner image element (e.g., alt='[Organization Name] Home') or an aria-label on the anchor element."}
+            {recommendation || "Remediation guidance not specified."}
           </p>
         </div>
 
@@ -97,7 +103,7 @@ export default function ViolationDetails({ violation }) {
           </div>
           <div className="rounded-xl bg-slate-900 p-3 border border-slate-800 text-[11px] font-mono text-emerald-300 overflow-x-auto shadow-inner">
             <code>
-              {developer_guidance || 'Ensure the image inside the navbar brand link has a meaningful alt attribute describing the brand or logo, such as alt="[Organization Name] Logo".'}
+              {developer_guidance || "/* No specific code snippet provided. */"}
             </code>
           </div>
         </div>

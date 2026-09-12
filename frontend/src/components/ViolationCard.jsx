@@ -4,54 +4,9 @@ import ViolationDetails from './ViolationDetails'
 export default function ViolationCard({ violation }) {
   const [isExpanded, setIsExpanded] = useState(false)
 
-  // Default fallback static violation object matching current API structure
-  const currentViolation = violation || {
-    violation_id: "AI-001",
-    scope: "ELEMENT",
-    element_reference: {
-      direction: "forward",
-      step: 1,
-    },
-    rule_id: "WCAG 1.1.1",
-    rule_name: "Non-text Content",
-    severity: "MAJOR",
-    confidence: 0.95,
-    title: "Unlabeled graphic link",
-    description:
-      "An image link (anchor tag enclosing an image) is announced by NVDA as an 'Unlabeled graphic' with the name 'logo.', lacking a descriptive alternative text that conveys its purpose or destination.",
-    ai_rationale:
-      "In step 1, Selenium inspects an anchor tag with class 'navbar-brand', and NVDA announces 'logo. ... Unlabeled graphic'. This indicates the image inside or the link itself lacks an appropriate alt text or accessible name, relying on generic fallback text ('logo.').",
-    user_impact:
-      "Screen reader users encountering an unlabeled graphic link will only hear 'logo.' without understanding what organization or site the logo represents or where the link navigates.",
-    wcag_context:
-      "WCAG 2.1 Success Criterion 1.1.1 Non-Text Content requires all non-text content that is presented to the user has a text alternative that serves the equivalent purpose.",
-    recommendation:
-      "Provide a descriptive 'alt' attribute on the inner image element (e.g., alt='[Organization Name] Home') or an aria-label on the anchor element.",
-    developer_guidance:
-      "Ensure the image inside the navbar brand link has a meaningful alt attribute describing the brand or logo, such as alt='[Organization Name] Logo'.",
-    evidence: {
-      selenium: {
-        tag: "a",
-        href: "https://makaut1.ucanapply.com/smartexam/public/#",
-        class: "navbar-brand",
-        expected_roles: ["button", "link", "graphic link"],
-      },
-      nvda: {
-        name: "logo.",
-        role: "graphic link",
-        attributes: ["same page"],
-        description: "To get missing image descriptions, open the context menu.",
-        raw_text:
-          "logo. To get missing image descriptions, open the context menu.  Unlabeled graphic    same page  lin",
-      },
-      comparison: {
-        status: "ROLE_MATCH_NAME_UNLABELLED",
-        name_match: false,
-        role_match: true,
-      },
-    },
-  }
+  if (!violation) return null
 
+  const currentViolation = violation
   const {
     violation_id,
     severity,

@@ -6,11 +6,78 @@ with robust error handling, rate limiting tolerance, and zero hardcoded credenti
 
 import os
 import json
+import base64
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger("AIAccessibilityAgent.Providers")
+
+
+def load_screenshot_image(
+    image_path: Optional[str],
+    max_bytes: int = 20 * 1024 * 1024,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Safely load a screenshot image from disk and encode it as base64 for Gemini multimodal input.
+    Validates:
+    - Non-empty path string
+    - File exists and is a regular file
+    - File size is within safe bounds (default 20MB)
+    - Supported extension/MIME type (png, jpg, jpeg, webp)
+
+    Returns:
+        (image_part_dict, error_string)
+        Where image_part_dict is:
+        {
+            "inline_data": {
+                "mime_type": "<MIME_TYPE>",
+                "data": "<BASE64_STRING>"
+            }
+        }
+        Or (None, error_string) if loading failed or path unavailable.
+    """
+    if not image_path or not isinstance(image_path, str) or not image_path.strip():
+        return None, "Screenshot path is empty or not a string."
+
+    clean_path = image_path.strip()
+    if not os.path.exists(clean_path):
+        return None, f"Screenshot file does not exist: {clean_path}"
+
+    if not os.path.isfile(clean_path):
+        return None, f"Screenshot path is not a regular file: {clean_path}"
+
+    ext = os.path.splitext(clean_path)[1].lower().lstrip(".")
+    mime_map = {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+    }
+    mime_type = mime_map.get(ext, "image/png")
+
+    try:
+        file_size = os.path.getsize(clean_path)
+        if file_size == 0:
+            return None, f"Screenshot file is empty (0 bytes): {clean_path}"
+        if file_size > max_bytes:
+            return None, f"Screenshot file exceeds maximum allowed size ({file_size} > {max_bytes} bytes): {clean_path}"
+
+        with open(clean_path, "rb") as img_file:
+            raw_bytes = img_file.read()
+
+        b64_data = base64.b64encode(raw_bytes).decode("ascii")
+        logger.info(f"Loaded screenshot evidence ({len(raw_bytes)} bytes, {mime_type}) for multimodal analysis.")
+        return {
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": b64_data,
+            }
+        }, None
+
+    except Exception as e:
+        logger.warning(f"Failed to read screenshot file from {clean_path}: {e}")
+        return None, f"Failed to read screenshot file: {str(e)}"
 
 
 def _load_env_file():
@@ -76,10 +143,12 @@ class BaseLLMProvider(ABC):
         system_prompt: str,
         user_prompt: str,
         violation_data: Optional[Dict[str, Any]] = None,
+        image_data: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
         """
         Generate structured analysis.
-        Works for both full synchronized accessibility audits and single-violation enrichment.
+        Works for full synchronized accessibility audits, multimodal audits, and enrichment.
+        Optionally accepts image_data (e.g. inline base64 screenshot) for multimodal reasoning.
         """
         pass
 
@@ -127,6 +196,10 @@ ACCESSIBILITY_ANALYSIS_SCHEMA = {
                         "properties": {
                             "direction": {"type": "STRING"},
                             "step": {"type": "INTEGER"},
+                            "tag": {"type": "STRING"},
+                            "src": {"type": "STRING"},
+                            "id": {"type": "STRING"},
+                            "selector": {"type": "STRING"},
                         },
                     },
                     "rule_id": {"type": "STRING"},
@@ -194,17 +267,20 @@ class MockLLMProvider(BaseLLMProvider):
         self.last_violation_data = None
         self.last_user_prompt = None
         self.last_system_prompt = None
+        self.last_image_data = None
 
     def generate_analysis(
         self,
         system_prompt: str,
         user_prompt: str,
         violation_data: Optional[Dict[str, Any]] = None,
+        image_data: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
         self.call_count += 1
         self.last_violation_data = violation_data
         self.last_user_prompt = user_prompt
         self.last_system_prompt = system_prompt
+        self.last_image_data = image_data
 
         if self.simulate_error:
             return LLMResponse(
@@ -447,8 +523,10 @@ class FallbackLLMProvider(BaseLLMProvider):
         system_prompt: str,
         user_prompt: str,
         violation_data: Optional[Dict[str, Any]] = None,
+        image_data: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
         self.call_count += 1
+        self.last_image_data = image_data
         unavailable_data = {
             "analysis_status": "AI_ANALYSIS_UNAVAILABLE",
             "error": self.reason,
@@ -499,6 +577,7 @@ class GeminiLLMProvider(BaseLLMProvider):
         system_prompt: str,
         user_prompt: str,
         violation_data: Optional[Dict[str, Any]] = None,
+        image_data: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
         if not self.api_key:
             return LLMResponse(
@@ -514,9 +593,15 @@ class GeminiLLMProvider(BaseLLMProvider):
 
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
             headers = {"Content-Type": "application/json"}
+
+            # Build multimodal content parts
+            content_parts = [{"text": user_prompt}]
+            if image_data and isinstance(image_data, dict):
+                content_parts.append(image_data)
+
             payload = {
                 "system_instruction": {"parts": [{"text": system_prompt}]},
-                "contents": [{"parts": [{"text": user_prompt}]}],
+                "contents": [{"parts": content_parts}],
                 "generationConfig": {
                     "response_mime_type": "application/json",
                     "response_schema": ACCESSIBILITY_ANALYSIS_SCHEMA,

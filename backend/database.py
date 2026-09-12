@@ -18,15 +18,24 @@ logger = logging.getLogger("Database")
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
-    logger.warning("DATABASE_URL is not set in environment or .env file.")
+    db_user = os.environ.get("DB_USER", "postgres")
+    db_pass = os.environ.get("DB_PASSWORD", "postgres")
+    db_host = os.environ.get("DB_HOST", "localhost")
+    db_port = os.environ.get("DB_PORT", "5432")
+    db_name = os.environ.get("DB_NAME", "accessibility_auditor")
+    DATABASE_URL = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+    logger.info(f"DATABASE_URL not set; using derived fallback: postgresql://{db_user}:***@{db_host}:{db_port}/{db_name}")
+
+pool_size = int(os.environ.get("DB_POOL_SIZE", 5))
+max_overflow = int(os.environ.get("DB_MAX_OVERFLOW", 10))
 
 # Configure connection pool
 # Note: SQLAlchemy pool_pre_ping tests connection liveness before checking out from pool
 engine = create_engine(
-    DATABASE_URL or "postgresql://postgres:postgres@localhost:5432/accessibility_auditor",
+    DATABASE_URL,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=pool_size,
+    max_overflow=max_overflow,
 )
 
 SessionLocal = sessionmaker(

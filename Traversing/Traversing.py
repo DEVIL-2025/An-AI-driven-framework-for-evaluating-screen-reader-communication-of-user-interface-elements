@@ -6,12 +6,14 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
-# Default target URL (can be overridden via command-line argument: python Traversing.py <URL>)
-DEFAULT_URL = "https://makaut1.ucanapply.com/smartexam/public/student/dashboard"
+import os
+
+# Target URL (can be provided via command-line argument: python Traversing.py <URL> or TARGET_URL env)
+DEFAULT_URL = os.environ.get("TARGET_URL", "")
 URL = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_URL
 
-TAB_LIMIT = 100                  # Maximum number of Tab presses
-WAIT_TIME = 2                    # Delay after each key press
+TAB_LIMIT = int(os.environ.get("TAB_LIMIT", 100))  # Maximum number of Tab presses
+WAIT_TIME = float(os.environ.get("WAIT_TIME", 2.0))  # Delay after each key press
 
 
 def get_element_details(element):
@@ -43,6 +45,11 @@ def print_element(index, details):
 
 
 if __name__ == "__main__":
+    if not URL:
+        print("Error: No target URL provided.")
+        print("Usage: python Traversing.py <URL>")
+        sys.exit(1)
+
     print(f"Target URL: {URL}")
 
     driver = webdriver.Chrome()

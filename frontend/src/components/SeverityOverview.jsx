@@ -1,4 +1,4 @@
-export default function SeverityOverview({ critical = 0, major = 1, minor = 0, info = 0 }) {
+export default function SeverityOverview({ critical = 0, major = 0, minor = 0, info = 0 }) {
   const levels = [
     {
       id: 'critical',

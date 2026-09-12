@@ -1,0 +1,767 @@
+{
+    "url": "https://www.makautexam.net/",
+    "forward": [
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://www.makautexam.net/announcement.html",
+                "class": "",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "list with 1 item • link Click to Visit out of",
+                "role": "list",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "list  with 1 item  •   link    Click to Visit  out of list"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": false,
+                "status": "NAME_MATCH_ROLE_MISMATCH"
+            },
+            "step": 1
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://www.makautexam.net/application-notice.html",
+                "class": "",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "list with 1 item Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "list  with 1 item  Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 2
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Apply Now",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "http://makautwb.in.net/tnd/",
+                "class": "mybutton buttColour1",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Apply Now",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Apply Now  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 3
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://www.makautexam.net/new_syllabus.html",
+                "class": "mybutton buttColour2",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 4
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://makaut1.ucanapply.com/smartexam/public/",
+                "class": "mybutton buttColour3",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 5
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Apply Now",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "http://makautwb.in.net/tnd/inputs/comlogin.aspx#!",
+                "class": "mybutton buttColour8",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Apply Now",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Apply Now  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 6
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "http://makautwb.in.net/cdp/",
+                "class": "mybutton buttColour6",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 7
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://makaut1.ucanapply.com/smartexam/public/admit-card",
+                "class": "mybutton buttColour4",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 8
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "http://makautexam.net/routine.html",
+                "class": "mybutton buttColour4",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 9
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Publication of results of Post Publication Review (PPR) of Even Semester 2025-26",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://d2xe8shibzpjog.cloudfront.net/Notice/makaut1/4679_1788788368.pdf",
+                "class": "",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Publication of results of Post Publication Review (PPR) of Even Semester 2025-26",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "list  with 69 items  Publication of results of Post Publication Review (PPR) of Even Semester 2025-26  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 10
+        }
+    ],
+    "backward": [
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "http://makautexam.net/routine.html",
+                "class": "mybutton buttColour4",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 1
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://makaut1.ucanapply.com/smartexam/public/admit-card",
+                "class": "mybutton buttColour4",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 2
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "http://makautwb.in.net/cdp/",
+                "class": "mybutton buttColour6",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 3
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Apply Now",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "http://makautwb.in.net/tnd/inputs/comlogin.aspx#!",
+                "class": "mybutton buttColour8",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Apply Now",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Apply Now  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 4
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://makaut1.ucanapply.com/smartexam/public/",
+                "class": "mybutton buttColour3",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 5
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://www.makautexam.net/new_syllabus.html",
+                "class": "mybutton buttColour2",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 6
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Apply Now",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "http://makautwb.in.net/tnd/",
+                "class": "mybutton buttColour1",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "Apply Now",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "Apply Now  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 7
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://www.makautexam.net/application-notice.html",
+                "class": "",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "list with 1 item Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "list  with 1 item  Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 8
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://www.makautexam.net/announcement.html",
+                "class": "",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "list with 1 item Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "list  with 1 item  Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 9
+        },
+        {
+            "selenium": {
+                "tag": "a",
+                "id": "",
+                "name": "",
+                "text": "Click to Visit",
+                "role": null,
+                "type": null,
+                "tabindex": null,
+                "aria-label": null,
+                "title": "",
+                "alt": null,
+                "placeholder": null,
+                "value": null,
+                "href": "https://makaut1.ucanapply.com/smartexam/public/",
+                "class": "",
+                "expected_roles": [
+                    "link",
+                    "graphic link",
+                    "button"
+                ]
+            },
+            "nvda": {
+                "name": "list with 1 item Click to Visit",
+                "role": "link",
+                "value": null,
+                "description": null,
+                "level": null,
+                "attributes": [],
+                "raw_text": "list  with 1 item  Click to Visit  link"
+            },
+            "comparison": {
+                "name_match": true,
+                "role_match": true,
+                "status": "MATCH"
+            },
+            "step": 10
+        }
+    ]
+}

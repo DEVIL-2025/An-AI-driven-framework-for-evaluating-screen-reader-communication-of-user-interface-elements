@@ -184,6 +184,7 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
     forward_results = []
     backward_results = []
     all_raw_events = []
+    screenshot_metadata = {"status": "FAILED", "error": "Screenshot capture not attempted"}
 
     try:
         driver.maximize_window()
@@ -278,7 +279,27 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
             print(f"Step {step:02d} | DOM: <{selenium_details['tag']}> '{selenium_details['text'][:30]}' | NVDA: {nvda_info} -> {result['comparison']['status']}")
 
     finally:
-        print("\nTraversal finished. Closing browser window...")
+        print("\nTraversal finished. Extracting semantic DOM snapshot & screenshot evidence...")
+        dom_snapshot = {}
+        try:
+            from tools.dom_extractor import extract_dom_snapshot
+            dom_snapshot = extract_dom_snapshot(driver)
+        except Exception as dom_err:
+            dom_snapshot = {"error": str(dom_err), "headings": [], "landmarks": [], "sections": [], "interactive_elements": []}
+
+        try:
+            from tools.screenshot_capture import capture_webpage_screenshot
+
+            screenshot_path = os.path.join(output_dir, "webpage_screenshot.png") if output_dir else "webpage_screenshot.png"
+            screenshot_metadata = capture_webpage_screenshot(driver, output_path=screenshot_path, output_dir=output_dir)
+            if screenshot_metadata.get("status") == "SUCCESS":
+                print(f"Screenshot captured: {screenshot_metadata.get('path')} ({screenshot_metadata.get('width')}x{screenshot_metadata.get('height')}, mode: {screenshot_metadata.get('capture_mode')})")
+            else:
+                print(f"Screenshot capture notice: {screenshot_metadata.get('error')}")
+        except Exception as ss_err:
+            screenshot_metadata = {"status": "FAILED", "error": str(ss_err)}
+
+        print("Closing browser window...")
         try:
             driver.quit()
         except Exception:
@@ -288,6 +309,23 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
     log_path = os.path.join(output_dir, "nvda_log.txt") if output_dir else "nvda_log.txt"
     sync_path = os.path.join(output_dir, "synchronized_output.json") if output_dir else "synchronized_output.json"
     ai_rep_path = os.path.join(output_dir, "ai_accessibility_report.json") if output_dir else "ai_accessibility_report.json"
+    screenshot_meta_path = os.path.join(output_dir, "screenshot_metadata.json") if output_dir else "screenshot_metadata.json"
+    dom_snapshot_path = os.path.join(output_dir, "dom_snapshot.json") if output_dir else "dom_snapshot.json"
+    unified_pkg_path = os.path.join(output_dir, "unified_evidence_package.json") if output_dir else "unified_evidence_package.json"
+
+    # Save screenshot_metadata.json
+    try:
+        with open(screenshot_meta_path, "w", encoding="utf-8") as f:
+            json.dump(screenshot_metadata, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Warning: could not save screenshot metadata: {e}")
+
+    # Save dom_snapshot.json
+    try:
+        with open(dom_snapshot_path, "w", encoding="utf-8") as f:
+            json.dump(dom_snapshot, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Warning: could not save DOM snapshot: {e}")
 
     # Save nvda_log.txt
     with open(log_path, "w", encoding="utf-8") as log:
@@ -304,6 +342,23 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
     with open(sync_path, "w", encoding="utf-8") as f:
         json.dump(final_output, f, indent=4, ensure_ascii=False)
 
+    # Assemble and save unified_evidence_package.json (Phase 3A)
+    unified_package = {}
+    try:
+        from tools.evidence_correlator import assemble_unified_evidence_package
+        unified_package = assemble_unified_evidence_package(
+            url=url,
+            synchronized_output=final_output,
+            dom_snapshot=dom_snapshot,
+            screenshot_metadata=screenshot_metadata,
+        )
+        with open(unified_pkg_path, "w", encoding="utf-8") as f:
+            json.dump(unified_package, f, indent=4, ensure_ascii=False)
+        corr_summary = unified_package.get("correlation_summary", {})
+        print(f"Unified evidence package assembled: {corr_summary.get('matched_count', 0)}/{corr_summary.get('total_synchronized_elements', 0)} elements matched ({corr_summary.get('match_rate_percent', 0)}%).")
+    except Exception as corr_err:
+        print(f"Warning: could not assemble unified evidence package: {corr_err}")
+
     # -------------------------------------------------------------------------
     # ACCESSIBILITY ANALYSIS LAYER (PURE AI - GEMINI)
     # -------------------------------------------------------------------------
@@ -312,7 +367,11 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
         print("PRIMARY ACCESSIBILITY ANALYSIS: AI ACCESSIBILITY ANALYZER (GEMINI)")
         print("=" * 70)
         ai_analyzer = AIAccessibilityAnalyzer()
-        ai_report_model = ai_analyzer.analyze_synchronized_evidence(final_output)
+        ai_report_model = ai_analyzer.analyze_synchronized_evidence(
+            final_output,
+            unified_package=unified_package,
+            screenshot_metadata=screenshot_metadata,
+        )
         ai_analyzer.save_ai_report(ai_report_model, ai_rep_path)
         ai_report_dict = ai_report_model.to_dict()
 
@@ -337,6 +396,11 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
         print(f"  - {log_path} (Stream of all captured NVDA speech events)")
         print(f"  - {sync_path} (DOM + Screen Reader Synchronized Data)")
         print(f"  - {ai_rep_path} (AI Accessibility Analysis Report)")
+        if screenshot_metadata.get("status") == "SUCCESS":
+            print(f"  - {screenshot_metadata.get('path')} (Webpage Screenshot Evidence)")
+        print(f"  - {dom_snapshot_path} (DOM Semantic/Structural Snapshot)")
+        print(f"  - {unified_pkg_path} (Unified Multimodal Evidence Package)")
+        print("=" * 70)
         is_success = ai_report_model.analysis_status in ("COMPLETED", "NO_VIOLATIONS")
         return {
             "status": "completed" if is_success else "failed",
@@ -348,6 +412,9 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
             "severity_summary": sev,
             "analysis": ai_report_dict,
             "output_dir": output_dir,
+            "screenshot": screenshot_metadata,
+            "dom_snapshot": dom_snapshot,
+            "unified_package": unified_package,
         }
 
     else:
@@ -377,6 +444,10 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
         print(f"  - {log_path} (Stream of all captured NVDA speech events)")
         print(f"  - {sync_path} (DOM + Screen Reader Synchronized Data)")
         print(f"  - {ai_rep_path} (AI Accessibility Analysis Report)")
+        if screenshot_metadata.get("status") == "SUCCESS":
+            print(f"  - {screenshot_metadata.get('path')} (Webpage Screenshot Evidence)")
+        print(f"  - {dom_snapshot_path} (DOM Semantic/Structural Snapshot)")
+        print(f"  - {unified_pkg_path} (Unified Multimodal Evidence Package)")
         print("=" * 70)
 
         return {
@@ -389,6 +460,9 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
             "severity_summary": {"CRITICAL": 0, "MAJOR": 0, "MINOR": 0, "INFO": 0},
             "analysis": unavailable_report,
             "output_dir": output_dir,
+            "screenshot": screenshot_metadata,
+            "dom_snapshot": dom_snapshot,
+            "unified_package": unified_package,
         }
 
 
@@ -396,6 +470,7 @@ def run_unit_tests():
     """Run automated parser, AI agent, backend, and database tests."""
     from tests.test_parser import TestNVDAParserGeneric
     from tests.test_ai_agent import TestAIAccessibilityAgent
+    from tests.test_gemini_multimodal import TestGeminiMultimodalIntegration
     from tests.test_backend import TestBackendAPI
     from tests.test_database import TestPostgreSQLDatabase
 
@@ -403,6 +478,7 @@ def run_unit_tests():
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromTestCase(TestNVDAParserGeneric))
     suite.addTests(loader.loadTestsFromTestCase(TestAIAccessibilityAgent))
+    suite.addTests(loader.loadTestsFromTestCase(TestGeminiMultimodalIntegration))
     suite.addTests(loader.loadTestsFromTestCase(TestBackendAPI))
     suite.addTests(loader.loadTestsFromTestCase(TestPostgreSQLDatabase))
 
@@ -417,8 +493,8 @@ def main():
     parser.add_argument(
         "url",
         nargs="?",
-        default="https://makaut1.ucanapply.com/smartexam/public/student/dashboard",
-        help="Target website URL for automated accessibility audit",
+        default=None,
+        help="Target website URL for automated accessibility audit (e.g. https://example.com)",
     )
     parser.add_argument(
         "--live",
@@ -438,6 +514,11 @@ def main():
         default=100,
         help="Maximum tab steps during automated traversal (default: 100)",
     )
+    parser.add_argument(
+        "--no-ai",
+        action="store_true",
+        help="Disable AI accessibility analysis (evidence collection only)",
+    )
 
     args = parser.parse_args()
 
@@ -445,11 +526,15 @@ def main():
         run_unit_tests()
     elif args.live:
         run_live_listener(enable_ai=True)
-    else:
+    elif args.url:
         try:
-            run_automated_audit(args.url, tab_limit=args.limit, enable_ai=True)
+            run_automated_audit(args.url, tab_limit=args.limit, enable_ai=not args.no_ai)
         except RuntimeError:
             sys.exit(1)
+    else:
+        parser.print_help()
+        print("\nNotice: Please specify a target URL to audit (or use --live or --test).")
+        sys.exit(0)
 
 
 if __name__ == "__main__":

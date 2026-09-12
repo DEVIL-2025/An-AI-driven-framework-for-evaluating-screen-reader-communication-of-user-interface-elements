@@ -14,7 +14,9 @@ export default function EvidenceSection({ evidence, elementReference }) {
             Authoritative Synchronized Evidence
           </h5>
           <p className="text-xs text-slate-500 font-medium">
-            Telemetry captured at step {elementReference?.step || 1} during browser keyboard navigation
+            {elementReference?.step
+              ? `Telemetry captured at step ${elementReference.step} during browser keyboard navigation`
+              : 'Telemetry captured during browser keyboard navigation'}
           </p>
         </div>
 
