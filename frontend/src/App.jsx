@@ -4,6 +4,7 @@ import AuditInput from './components/AuditInput'
 import SummaryCard from './components/SummaryCard'
 import SeverityOverview from './components/SeverityOverview'
 import ViolationCard from './components/ViolationCard'
+import RecommendationCard from './components/RecommendationCard'
 import AuditHistory from './components/AuditHistory'
 import { startAudit, getAuditById } from './services/api'
 
@@ -74,6 +75,7 @@ function App() {
   const summary = analysis?.summary
   const severitySummary = summary?.severity_summary || { CRITICAL: 0, MAJOR: 0, MINOR: 0, INFO: 0 }
   const violations = analysis?.violations || []
+  const recommendations = analysis?.recommendations || []
   const auditStatus = auditResult?.status || 'idle'
 
   return (
@@ -184,7 +186,7 @@ function App() {
               <h2 id="summary-heading" className="sr-only">
                 Audit Summary Metrics
               </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <SummaryCard
                   title="Compliance Score"
                   value={summary ? `${summary.compliance_score}%` : '—'}
@@ -211,6 +213,21 @@ function App() {
                   icon={
                     <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  }
+                />
+
+                <SummaryCard
+                  title="Recommendations"
+                  value={summary !== undefined && summary !== null ? String(summary.total_recommendations ?? recommendations.length) : '—'}
+                  subtitle={
+                    summary
+                      ? 'Advisory best practices (0 score penalty)'
+                      : 'Structural enhancements'
+                  }
+                  icon={
+                    <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   }
                 />
@@ -313,6 +330,37 @@ function App() {
                 </div>
               )}
             </section>
+
+            {/* 6. Accessibility Recommendations & Best Practices Section */}
+            {auditResult && recommendations.length > 0 && (
+              <section aria-labelledby="recommendations-heading" className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 id="recommendations-heading" className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                      <span>Accessibility Recommendations</span>
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        Advisory / Best Practices
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Structural enhancements and advisory guidance that do not violate normative WCAG criteria (0 score penalty)
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-blue-700 px-3 py-1 rounded-full bg-blue-50 border border-blue-200">
+                    {recommendations.length} {recommendations.length === 1 ? 'recommendation' : 'recommendations'}
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {recommendations.map((rec, index) => (
+                    <RecommendationCard
+                      key={rec.recommendation_id || `rec-${index}`}
+                      recommendation={rec}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
           </>
         )}
       </main>

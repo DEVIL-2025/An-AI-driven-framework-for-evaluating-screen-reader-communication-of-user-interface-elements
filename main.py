@@ -97,6 +97,7 @@ def run_live_listener(enable_ai=True):
                 print(f"\nAI Accessibility Assessment Score: {summary.get('compliance_score', 100.0)}%")
                 print(f"Total Unique Elements Captured   : {summary.get('total_elements_analyzed', 0)}")
                 print(f"Total AI Violations Detected     : {summary.get('total_violations', 0)}")
+                print(f"Total Recommendations Provided   : {summary.get('total_recommendations', 0)}")
                 sev = summary.get("severity_summary", {})
                 print(f"Severity Breakdown               : Critical={sev.get('CRITICAL', 0)}, Major={sev.get('MAJOR', 0)}, Minor={sev.get('MINOR', 0)}, Info={sev.get('INFO', 0)}")
                 print(f"AI Analysis Status               : {ai_report.analysis_status} (Model: {ai_report.ai_metadata.get('model')})")
@@ -107,6 +108,13 @@ def run_live_listener(enable_ai=True):
                         print(f"  {idx}. [{v.severity}] {v.rule_id} - {v.title} (Confidence: {v.confidence})")
                         print(f"     Impact      : {v.user_impact[:100]}...")
                         print(f"     Remediation : {v.developer_guidance[:100]}...")
+
+                if hasattr(ai_report, "recommendations") and ai_report.recommendations:
+                    print("\nACCESSIBILITY RECOMMENDATIONS & BEST PRACTICES:")
+                    for idx, r in enumerate(ai_report.recommendations[:5], 1):
+                        print(f"  {idx}. [{r.category}] {r.title}")
+                        print(f"     Impact      : {r.user_impact[:100]}...")
+                        print(f"     Guidance    : {r.developer_guidance[:100]}...")
             else:
                 print("\n" + "=" * 70)
                 print("AI ACCESSIBILITY AUDIT DISABLED")
@@ -188,23 +196,38 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
     try:
         driver.maximize_window()
+        print(f"[PAGE] Navigating to target URL: {url}")
         driver.get(url)
-        time.sleep(2)
 
-        try:
-            driver.find_element(By.TAG_NAME, "body").click()
-        except Exception:
-            pass
+        # Explicit Lifecycle State: Drain pre-traversal page initialization speech
+        print("[NVDA] Page loading. Draining pre-traversal speech buffer...")
+        initial_speech, is_settled = extractor.drain_initial_speech()
+        print(f"[NVDA] Baseline established. Initial speech length: {len(initial_speech)} chars (settled={is_settled}).")
+
+        initial_events = []
+        if initial_speech:
+            cleaned_init = filter_tool.clean(initial_speech)
+            if cleaned_init:
+                initial_events = [ev.to_dict() for ev in parser.parse(cleaned_init)]
+
+        initialization_data = {
+            "phase": "PAGE_INITIALIZATION",
+            "raw_speech": initial_speech,
+            "events": initial_events,
+            "settled": is_settled,
+        }
 
         actions = ActionChains(driver)
 
         # Forward Traversal
         visited_forward = set()
 
-        print("\nStarting Forward Tab Traversal...")
+        print("\nStarting Forward Tab Traversal (TRAVERSAL_READY)...")
         for step in range(1, tab_limit + 1):
-            actions.send_keys(Keys.TAB).perform()
-            time.sleep(0.2)
+            def do_tab():
+                actions.send_keys(Keys.TAB).perform()
+
+            step_speech, capture_status = extractor.capture_action_response(do_tab)
 
             try:
                 active = driver.switch_to.active_element
@@ -228,14 +251,21 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
                 continue
 
             selenium_details = get_element_details(active)
-            result = capture_synchronized_element(extractor, filter_tool, parser, selenium_details)
+            result = capture_synchronized_element(
+                extractor,
+                filter_tool,
+                parser,
+                selenium_details,
+                captured_speech=step_speech,
+                capture_status=capture_status,
+            )
             result["step"] = step
             forward_results.append(result)
 
             if result["nvda"]:
                 all_raw_events.append(result["nvda"])
 
-            nvda_info = result["nvda"]["role"] if result["nvda"] else "None"
+            nvda_info = result["nvda"]["role"] if result["nvda"] else f"None ({capture_status})"
             print(f"Step {step:02d} | DOM: <{selenium_details['tag']}> '{selenium_details['text'][:30]}' | NVDA: {nvda_info} -> {result['comparison']['status']}")
 
         # Backward Traversal
@@ -243,8 +273,10 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
         print("\nStarting Backward Shift+Tab Traversal...")
         for step in range(1, tab_limit + 1):
-            actions.key_down(Keys.SHIFT).send_keys(Keys.TAB).key_up(Keys.SHIFT).perform()
-            time.sleep(0.2)
+            def do_shift_tab():
+                actions.key_down(Keys.SHIFT).send_keys(Keys.TAB).key_up(Keys.SHIFT).perform()
+
+            step_speech, capture_status = extractor.capture_action_response(do_shift_tab)
 
             try:
                 active = driver.switch_to.active_element
@@ -268,14 +300,21 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
                 continue
 
             selenium_details = get_element_details(active)
-            result = capture_synchronized_element(extractor, filter_tool, parser, selenium_details)
+            result = capture_synchronized_element(
+                extractor,
+                filter_tool,
+                parser,
+                selenium_details,
+                captured_speech=step_speech,
+                capture_status=capture_status,
+            )
             result["step"] = step
             backward_results.append(result)
 
             if result["nvda"]:
                 all_raw_events.append(result["nvda"])
 
-            nvda_info = result["nvda"]["role"] if result["nvda"] else "None"
+            nvda_info = result["nvda"]["role"] if result["nvda"] else f"None ({capture_status})"
             print(f"Step {step:02d} | DOM: <{selenium_details['tag']}> '{selenium_details['text'][:30]}' | NVDA: {nvda_info} -> {result['comparison']['status']}")
 
     finally:
@@ -335,6 +374,7 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
     # Save synchronized_output.json
     final_output = {
         "url": url,
+        "initialization": locals().get("initialization_data", None),
         "forward": forward_results,
         "backward": backward_results,
     }
@@ -381,6 +421,7 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
         print(f"\nAI Accessibility Assessment Score: {summary.get('compliance_score', 100.0)}%")
         print(f"Total Elements Audited (by AI)   : {summary.get('total_elements_analyzed', len(forward_results))}")
         print(f"Total AI Violations Discovered   : {summary.get('total_violations', 0)}")
+        print(f"Total Recommendations Provided   : {summary.get('total_recommendations', 0)}")
         print(f"AI Severity Breakdown            : Critical={sev.get('CRITICAL', 0)}, Major={sev.get('MAJOR', 0)}, Minor={sev.get('MINOR', 0)}, Info={sev.get('INFO', 0)}")
         print(f"AI Analysis Status               : {ai_report_model.analysis_status} (Model: {ai_report_model.ai_metadata.get('model')})")
 
@@ -390,6 +431,13 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
                 print(f"  {idx}. [{v.severity}] {v.rule_id} - {v.title} (Confidence: {v.confidence})")
                 print(f"     User Impact : {v.user_impact[:90]}...")
                 print(f"     Remediation : {v.recommendation[:90]}...")
+
+        if hasattr(ai_report_model, "recommendations") and ai_report_model.recommendations:
+            print("\nACCESSIBILITY RECOMMENDATIONS & BEST PRACTICES:")
+            for idx, r in enumerate(ai_report_model.recommendations[:5], 1):
+                print(f"  {idx}. [{r.category}] {r.title}")
+                print(f"     User Impact : {r.user_impact[:90]}...")
+                print(f"     Guidance    : {r.developer_guidance[:90]}...")
 
         print("\n" + "=" * 70)
         print("Outputs saved:")
@@ -408,6 +456,7 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
             "analysis_type": "AI_ACCESSIBILITY_ANALYSIS",
             "total_elements_audited": summary.get("total_elements_analyzed", len(forward_results)),
             "total_violations": summary.get("total_violations", 0),
+            "total_recommendations": summary.get("total_recommendations", len(ai_report_model.recommendations) if hasattr(ai_report_model, "recommendations") else 0),
             "compliance_score": summary.get("compliance_score", 100.0),
             "severity_summary": sev,
             "analysis": ai_report_dict,
@@ -430,10 +479,12 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
             "summary": {
                 "total_elements_analyzed": len(forward_results),
                 "total_violations": 0,
+                "total_recommendations": 0,
                 "compliance_score": 0.0,
                 "severity_summary": {"CRITICAL": 0, "MAJOR": 0, "MINOR": 0, "INFO": 0},
             },
             "violations": [],
+            "recommendations": [],
             "ai_metadata": {"reason": "AI analysis was explicitly disabled."},
         }
         with open(ai_rep_path, "w", encoding="utf-8") as f:

@@ -38,11 +38,13 @@ from tools.ai_agent import (
     AIAccessibilityAnalyzer,
     AIAccessibilityAgent,
     AIViolationFinding,
+    AIRecommendation,
     AIAccessibilityAnalysisReport,
     extract_page_context,
     prepare_compact_evidence,
     calculate_ai_score,
     deduplicate_violations,
+    deduplicate_recommendations,
     AI_ANALYZER_SYSTEM_PROMPT,
 )
 
@@ -884,7 +886,710 @@ class TestAIAccessibilityAgent(unittest.TestCase):
         self.assertNotIn("defects", ctx)
         self.assertNotIn("is_violation", str(ctx))
 
+    # -------------------------------------------------------------------------
+    # TEST 21: Recommendations carry zero score penalty
+    # -------------------------------------------------------------------------
+    def test_21_recommendations_carry_zero_score_penalty(self):
+        # 1. Zero violations -> 100.0% score
+        self.assertEqual(calculate_ai_score(10, []), 100.0)
+
+        # 2. INFO severity violation carries 0.0 penalty -> 100.0% score
+        info_finding = AIViolationFinding(
+            violation_id="AI-INFO-1",
+            scope="PAGE",
+            element_reference=None,
+            rule_id="WCAG 1.3.1",
+            rule_name="Info and Relationships",
+            severity="INFO",
+            confidence=0.85,
+            title="Informational observation",
+            description="Advisory observation without accessibility barrier",
+            ai_rationale="Neutral observation",
+            user_impact="Minimal",
+            wcag_context="Advisory",
+            recommendation="Consider structural review",
+            developer_guidance="Use semantic tags",
+            evidence={"page_context": {}},
+        )
+        self.assertEqual(calculate_ai_score(10, [info_finding]), 100.0)
+
+        # 3. MAJOR severity violation carries 8.0 penalty -> reduces score
+        major_finding = copy.deepcopy(info_finding)
+        major_finding.severity = "MAJOR"
+        score_with_major = calculate_ai_score(10, [major_finding])
+        self.assertEqual(score_with_major, 92.0)
+        self.assertLess(score_with_major, 100.0)
+
+    # -------------------------------------------------------------------------
+    # TEST 22: Advisory Main Landmark routed to recommendations
+    # -------------------------------------------------------------------------
+    def test_22_advisory_main_landmark_routed_to_recommendations(self):
+        class MainLandmarkMockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 1,
+                            "total_violations": 1,
+                            "total_recommendations": 0,
+                            "compliance_score": 92.0,
+                            "severity_summary": {"CRITICAL": 0, "MAJOR": 1, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            {
+                                "violation_id": "AI-001",
+                                "scope": "PAGE",
+                                "element_reference": None,
+                                "rule_id": "WCAG 1.3.1",
+                                "rule_name": "Info and Relationships",
+                                "severity": "MAJOR",
+                                "confidence": 0.90,
+                                "title": "Missing Main Landmark Region",
+                                "description": "The page does not contain a <main> landmark region.",
+                                "ai_rationale": "DOM inspection shows banner, nav, and form, but no <main> tag.",
+                                "user_impact": "Users cannot jump directly to main content via landmark shortcuts.",
+                                "wcag_context": "WCAG 1.3.1 Level A",
+                                "recommendation": "Wrap primary content in a <main> element.",
+                                "developer_guidance": "Add <main role='main'>[Main Content]</main>.",
+                                "evidence": {"page_context": {}},
+                            }
+                        ],
+                        "recommendations": [],
+                    }
+                })()
+
+        sync_data = {
+            "url": "https://example.com",
+            "forward": [self.accessible_button_sync],
+            "backward": [],
+        }
+        analyzer = AIAccessibilityAnalyzer(provider=MainLandmarkMockProvider())
+        report = analyzer.analyze_synchronized_evidence(sync_data)
+
+        # Main landmark missing must NOT be a violation
+        self.assertEqual(len(report.violations), 0)
+        self.assertEqual(report.summary.total_violations, 0)
+
+        # Must be routed to recommendations
+        self.assertEqual(len(report.recommendations), 1)
+        self.assertEqual(report.summary.total_recommendations, 1)
+        rec = report.recommendations[0]
+        self.assertEqual(rec.category, "BEST_PRACTICE")
+        self.assertIn("Main", rec.title)
+        self.assertIsNotNone(rec.related_guidance)
+        self.assertEqual(rec.related_guidance.get("technique"), "ARIA11")
+
+        # Compliance score must remain 100.0%
+        self.assertEqual(report.summary.compliance_score, 100.0)
+
+    # -------------------------------------------------------------------------
+    # TEST 23: Advisory H1 routed to recommendations
+    # -------------------------------------------------------------------------
+    def test_23_advisory_h1_routed_to_recommendations(self):
+        class MissingH1MockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 1,
+                            "total_violations": 1,
+                            "total_recommendations": 0,
+                            "compliance_score": 92.0,
+                            "severity_summary": {"CRITICAL": 0, "MAJOR": 1, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            {
+                                "violation_id": "AI-002",
+                                "scope": "PAGE",
+                                "element_reference": None,
+                                "rule_id": "WCAG 1.3.1",
+                                "rule_name": "Info and Relationships",
+                                "severity": "MAJOR",
+                                "confidence": 0.85,
+                                "title": "Missing Level 1 Heading (H1)",
+                                "description": "The page structure begins with an H2 heading without a top-level H1.",
+                                "ai_rationale": "DOM snapshot shows heading hierarchy starts at level 2.",
+                                "user_impact": "Screen reader users lack a primary document title announcement.",
+                                "wcag_context": "WCAG 1.3.1 Level A",
+                                "recommendation": "Add a descriptive <h1> heading.",
+                                "developer_guidance": "Add <h1>[Page Title]</h1>.",
+                                "evidence": {"page_context": {}},
+                            }
+                        ],
+                        "recommendations": [],
+                    }
+                })()
+
+        sync_data = {
+            "url": "https://example.com",
+            "forward": [self.accessible_button_sync],
+            "backward": [],
+        }
+        analyzer = AIAccessibilityAnalyzer(provider=MissingH1MockProvider())
+        report = analyzer.analyze_synchronized_evidence(sync_data)
+
+        # Missing H1 must NOT be a violation
+        self.assertEqual(len(report.violations), 0)
+        self.assertEqual(report.summary.total_violations, 0)
+
+        # Must be routed to recommendations
+        self.assertEqual(len(report.recommendations), 1)
+        self.assertEqual(report.summary.total_recommendations, 1)
+        rec = report.recommendations[0]
+        self.assertEqual(rec.category, "BEST_PRACTICE")
+        self.assertIn("H1", rec.title)
+        self.assertIsNotNone(rec.related_guidance)
+        self.assertEqual(rec.related_guidance.get("technique"), "G141")
+
+        # Compliance score must remain 100.0%
+        self.assertEqual(report.summary.compliance_score, 100.0)
+
+    # -------------------------------------------------------------------------
+    # TEST 24: Recommendation schema validation and deduplication
+    # -------------------------------------------------------------------------
+    def test_24_recommendation_schema_and_deduplication(self):
+        rec1 = AIRecommendation(
+            recommendation_id="REC-001",
+            category="BEST_PRACTICE",
+            scope="PAGE",
+            title="Add Main Landmark",
+            description="Enables landmark navigation",
+            ai_rationale="Allows quick bypass to main content",
+            user_impact="Users can jump directly to primary content",
+            developer_guidance="Use <main> element",
+        )
+        self.assertEqual(rec1.category, "BEST_PRACTICE")
+        self.assertEqual(rec1.scope, "PAGE")
+
+        # Invalid scope should raise ValueError
+        with self.assertRaises(ValueError):
+            AIRecommendation(
+                recommendation_id="REC-ERR",
+                category="BEST_PRACTICE",
+                scope="INVALID_SCOPE",
+                title="Invalid",
+                description="Invalid",
+                ai_rationale="Invalid",
+                user_impact="Invalid",
+                developer_guidance="Invalid",
+            )
+
+        # Category defaults to BEST_PRACTICE when given unknown category
+        rec_cat = AIRecommendation(
+            recommendation_id="REC-CAT",
+            category="UNKNOWN_CAT",
+            scope="PAGE",
+            title="Cat Test",
+            description="Cat Test",
+            ai_rationale="Cat Test",
+            user_impact="Cat Test",
+            developer_guidance="Cat Test",
+        )
+        self.assertEqual(rec_cat.category, "BEST_PRACTICE")
+
+        # Deduplication merges identical recommendation IDs or titles
+        rec2 = copy.deepcopy(rec1)
+        rec3 = copy.deepcopy(rec1)
+        rec3.recommendation_id = "REC-002"  # same title
+        deduped = deduplicate_recommendations([rec1, rec2, rec3])
+        self.assertEqual(len(deduped), 1)
+
+    # -------------------------------------------------------------------------
+    # TEST 25: Genuine WCAG violation retains violation status and reduces score
+    # -------------------------------------------------------------------------
+    def test_25_genuine_violation_retains_violation_status(self):
+        class GenuineViolationMockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 1,
+                            "total_violations": 1,
+                            "total_recommendations": 0,
+                            "compliance_score": 85.0,
+                            "severity_summary": {"CRITICAL": 1, "MAJOR": 0, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            {
+                                "violation_id": "AI-001",
+                                "scope": "ELEMENT",
+                                "element_reference": {"step": 1, "direction": "forward"},
+                                "rule_id": "WCAG 4.1.2",
+                                "rule_name": "Name, Role, Value",
+                                "severity": "CRITICAL",
+                                "confidence": 0.95,
+                                "title": "Unlabelled Interactive Button",
+                                "description": "Interactive button has empty text and no accessible name.",
+                                "ai_rationale": "DOM button text is empty; NVDA announces role button with no label.",
+                                "normative_basis": {
+                                    "success_criterion": "4.1.2",
+                                    "level": "A",
+                                    "failure_condition": "Interactive element lacks accessible name",
+                                    "evidence_basis": ["DOM", "NVDA"],
+                                },
+                                "user_impact": "Blind users cannot determine the function of the button.",
+                                "wcag_context": "WCAG 4.1.2 Level A",
+                                "recommendation": "Provide an accessible name using aria-label or visible text.",
+                                "developer_guidance": "Add aria-label='[Descriptive Action]'.",
+                            }
+                        ],
+                        "recommendations": [],
+                    }
+                })()
+
+        sync_data = {
+            "url": "https://example.com",
+            "forward": [self.accessible_button_sync],
+            "backward": [],
+        }
+        analyzer = AIAccessibilityAnalyzer(provider=GenuineViolationMockProvider())
+        report = analyzer.analyze_synchronized_evidence(sync_data)
+
+        # Genuine violation must remain in violations
+        self.assertEqual(len(report.violations), 1)
+        self.assertEqual(report.summary.total_violations, 1)
+        self.assertEqual(report.violations[0].rule_id, "WCAG 4.1.2")
+        self.assertEqual(report.violations[0].severity, "CRITICAL")
+        self.assertIsNotNone(report.violations[0].normative_basis)
+
+        # Compliance score must reflect the penalized score
+        expected_score = calculate_ai_score(len(sync_data["forward"]), report.violations)
+        self.assertEqual(report.summary.compliance_score, expected_score)
+
+    # -------------------------------------------------------------------------
+    # TEST 26: Nested child image in named link adjudicated to recommendation
+    # -------------------------------------------------------------------------
+    def test_26_nested_child_image_in_named_interactive_element_adjudicated_to_recommendation(self):
+        class NestedImgMockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 1,
+                            "total_violations": 1,
+                            "total_recommendations": 0,
+                            "compliance_score": 85.0,
+                            "severity_summary": {"CRITICAL": 0, "MAJOR": 1, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            {
+                                "violation_id": "AI-001",
+                                "scope": "ELEMENT",
+                                "element_reference": {"step": 1, "direction": "forward"},
+                                "rule_id": "WCAG 1.1.1",
+                                "rule_name": "Non-text Content",
+                                "severity": "MAJOR",
+                                "confidence": 0.90,
+                                "title": "Social Media Icons Lack Accessible Text Alternatives",
+                                "description": "Footer link icons lack alt attributes on child <img> elements.",
+                                "ai_rationale": "Child <img> tag inside <a> element has no alt attribute.",
+                                "user_impact": "Screen reader users may hear confusing icon file names.",
+                                "wcag_context": "WCAG 1.1.1 Non-text Content (Level A)",
+                                "recommendation": "Provide alt text for the child image.",
+                                "developer_guidance": "Add alt='' to the decorative icon.",
+                            }
+                        ],
+                        "recommendations": [],
+                    }
+                })()
+
+        sync_data = {
+            "url": "https://example.com",
+            "forward": [
+                {
+                    "step": 1,
+                    "selenium": {
+                        "tag": "a",
+                        "href": "https://example.com/social",
+                        "aria_label": "Official Social Media Channel",
+                        "text": "",
+                    },
+                    "nvda": {
+                        "name": "Official Social Media Channel",
+                        "role": "link",
+                        "raw_text": "Official Social Media Channel link",
+                    },
+                    "comparison": {"name_match": True, "role_match": True, "status": "MATCH"},
+                }
+            ],
+            "backward": [],
+        }
+        analyzer = AIAccessibilityAnalyzer(provider=NestedImgMockProvider())
+        report = analyzer.analyze_synchronized_evidence(sync_data)
+
+        # Violation should be safely downgraded to an advisory recommendation
+        self.assertEqual(len(report.violations), 0)
+        self.assertEqual(report.summary.total_violations, 0)
+        self.assertEqual(len(report.recommendations), 1)
+        rec = report.recommendations[0]
+        self.assertEqual(rec.category, "BEST_PRACTICE")
+        self.assertIn("H67", rec.related_guidance.get("technique", ""))
+        self.assertIsNotNone(rec.code_example)
+        # Score must be 100.0 (zero score penalty)
+        self.assertEqual(report.summary.compliance_score, 100.0)
+
+    # -------------------------------------------------------------------------
+    # TEST 27: Standalone informative image without alt is retained as violation
+    # -------------------------------------------------------------------------
+    def test_27_standalone_image_without_alt_retained_as_violation(self):
+        class StandaloneImgMockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 1,
+                            "total_violations": 1,
+                            "total_recommendations": 0,
+                            "compliance_score": 92.0,
+                            "severity_summary": {"CRITICAL": 0, "MAJOR": 1, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            {
+                                "violation_id": "AI-002",
+                                "scope": "ELEMENT",
+                                "element_reference": {"tag": "img", "src": "diagram.png"},
+                                "rule_id": "WCAG 1.1.1",
+                                "rule_name": "Non-text Content",
+                                "severity": "MAJOR",
+                                "confidence": 0.95,
+                                "title": "Informative Architecture Diagram Lacks Alt Text",
+                                "description": "A standalone architecture infographic is missing an alt attribute.",
+                                "ai_rationale": "Standalone <img> has src='diagram.png' and lacks alt attribute.",
+                                "normative_basis": {
+                                    "success_criterion": "1.1.1",
+                                    "level": "A",
+                                    "requirement": "All non-text content that is presented to the user has a text alternative that serves the equivalent purpose.",
+                                    "failure_condition": "Informative non-text content without text alternative.",
+                                    "evidence_basis": ["DOM"],
+                                },
+                                "user_impact": "Blind users receive no explanation of the diagram.",
+                                "wcag_context": "WCAG 1.1.1 Level A",
+                                "recommendation": "Add a descriptive alt attribute describing the architecture.",
+                                "developer_guidance": "<img src='diagram.png' alt='[Architecture flow chart]' />",
+                            }
+                        ],
+                        "recommendations": [],
+                    }
+                })()
+
+        sync_data = {
+            "url": "https://example.com",
+            "forward": [self.accessible_button_sync],
+            "backward": [],
+        }
+        analyzer = AIAccessibilityAnalyzer(provider=StandaloneImgMockProvider())
+        report = analyzer.analyze_synchronized_evidence(sync_data)
+
+        # Standalone image violation must be preserved
+        self.assertEqual(len(report.violations), 1)
+        self.assertEqual(report.summary.total_violations, 1)
+        v = report.violations[0]
+        self.assertEqual(v.rule_id, "WCAG 1.1.1")
+        self.assertEqual(v.normative_basis.requirement, "All non-text content that is presented to the user has a text alternative that serves the equivalent purpose.")
+        # Score must be deducted
+        self.assertLess(report.summary.compliance_score, 100.0)
+
+    # -------------------------------------------------------------------------
+    # TEST 28: CAPTCHA challenge misclassified under 4.1.2 downgraded to recommendation
+    # -------------------------------------------------------------------------
+    def test_28_captcha_challenge_mapped_to_412_downgraded_to_recommendation(self):
+        class CaptchaMockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 1,
+                            "total_violations": 1,
+                            "total_recommendations": 0,
+                            "compliance_score": 85.0,
+                            "severity_summary": {"CRITICAL": 0, "MAJOR": 1, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            {
+                                "violation_id": "AI-003",
+                                "scope": "ELEMENT",
+                                "element_reference": {"tag": "img", "src": "captcha.jpg"},
+                                "rule_id": "WCAG 4.1.2",
+                                "rule_name": "Name, Role, Value",
+                                "severity": "MAJOR",
+                                "confidence": 0.85,
+                                "title": "Captcha Image Lacks Descriptive Text Alternative",
+                                "description": "The captcha image has alt='Captcha Image here' which does not transcribe the characters.",
+                                "ai_rationale": "The captcha image does not reveal the distorted security characters.",
+                                "user_impact": "Users cannot read the captcha characters.",
+                                "wcag_context": "WCAG 4.1.2",
+                                "recommendation": "Provide audio captcha alternative.",
+                                "developer_guidance": "Add audio alternative.",
+                            }
+                        ],
+                        "recommendations": [],
+                    }
+                })()
+
+        sync_data = {
+            "url": "https://example.com",
+            "forward": [self.accessible_button_sync],
+            "backward": [],
+        }
+        analyzer = AIAccessibilityAnalyzer(provider=CaptchaMockProvider())
+        report = analyzer.analyze_synchronized_evidence(sync_data)
+
+        # Captcha 4.1.2 misclassification should be downgraded to G144 recommendation
+        self.assertEqual(len(report.violations), 0)
+        self.assertEqual(report.summary.total_violations, 0)
+        self.assertEqual(len(report.recommendations), 1)
+        rec = report.recommendations[0]
+        self.assertEqual(rec.category, "BEST_PRACTICE")
+        self.assertIn("G144", rec.related_guidance.get("technique", ""))
+        self.assertEqual(report.summary.compliance_score, 100.0)
+
+    # -------------------------------------------------------------------------
+    # TEST 29: AINormativeBasis model parsing and validation
+    # -------------------------------------------------------------------------
+    def test_29_normative_basis_parsing_and_model(self):
+        from tools.ai_agent import AINormativeBasis
+        nb = AINormativeBasis(
+            success_criterion="1.1.1",
+            level="A",
+            requirement="Provide text alternatives for non-text content.",
+            failure_condition="Missing alt attribute on informative image.",
+            evidence_basis=["DOM", "nvda"],
+        )
+        self.assertEqual(nb.success_criterion, "1.1.1")
+        self.assertEqual(nb.level, "A")
+        self.assertEqual(nb.requirement, "Provide text alternatives for non-text content.")
+        self.assertEqual(nb.failure_condition, "Missing alt attribute on informative image.")
+        self.assertEqual(nb.evidence_basis, ["DOM", "NVDA"])
+
+    # -------------------------------------------------------------------------
+    # TEST 30: Normative basis regex extraction of concatenated LLM string
+    # -------------------------------------------------------------------------
+    def test_30_normative_basis_regex_extraction_of_concatenated_string(self):
+        finding_data = {
+            "violation_id": "AI-001",
+            "scope": "ELEMENT",
+            "element_reference": {"direction": "forward", "step": 1},
+            "rule_id": "WCAG 2.4.4",
+            "rule_name": "Link Purpose (In Context)",
+            "severity": "MAJOR",
+            "confidence": 0.9,
+            "title": "Generic link text",
+            "description": "Repeated generic link text without context",
+            "ai_rationale": "DOM shows generic text",
+            "normative_basis": {
+                "success_criterion": "2.4.4vLevel A\nFailure Condition: Multiple links have identical text pointing to different destinations without distinguishing context.\nEvidence Basis: [DOM, NVDA, INTERACTION]",
+            },
+            "user_impact": "Disorientation",
+            "wcag_context": "WCAG 2.4.4 Level A",
+            "recommendation": "Use descriptive text",
+            "developer_guidance": "Add aria-label",
+        }
+        finding = AIViolationFinding(**finding_data)
+        self.assertIsNotNone(finding.normative_basis)
+        self.assertEqual(finding.normative_basis.success_criterion, "2.4.4")
+        self.assertEqual(finding.normative_basis.level, "A")
+        self.assertEqual(
+            finding.normative_basis.failure_condition,
+            "Multiple links have identical text pointing to different destinations without distinguishing context."
+        )
+        self.assertEqual(finding.normative_basis.evidence_basis, ["DOM", "NVDA", "INTERACTION"])
+
+    # -------------------------------------------------------------------------
+    # TEST 31: Adjudication: Link Purpose with heading/section context downgraded to recommendation
+    # -------------------------------------------------------------------------
+    def test_31_adjudication_link_purpose_with_context_downgraded_to_recommendation(self):
+        class LinkMockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 1,
+                            "total_violations": 1,
+                            "total_recommendations": 0,
+                            "compliance_score": 92.0,
+                            "severity_summary": {"CRITICAL": 0, "MAJOR": 1, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            {
+                                "violation_id": "AI-001",
+                                "scope": "ELEMENT",
+                                "element_reference": {"direction": "forward", "step": 1},
+                                "rule_id": "WCAG 2.4.4",
+                                "rule_name": "Link Purpose (In Context)",
+                                "severity": "MAJOR",
+                                "confidence": 0.85,
+                                "title": "Ambiguous 'Click to Visit' link text",
+                                "description": "Generic link text 'Click to Visit' used for link.",
+                                "ai_rationale": "Same link text pointing to destination.",
+                                "normative_basis": {
+                                    "success_criterion": "2.4.4",
+                                    "level": "A",
+                                    "requirement": "The purpose of each link can be determined from the link text alone or from the link text together with its programmatically determined link context.",
+                                    "failure_condition": "Generic link text",
+                                    "evidence_basis": ["DOM", "NVDA"],
+                                },
+                                "user_impact": "Users navigating out of context may need to check headings.",
+                                "wcag_context": "WCAG 2.4.4 Level A",
+                                "recommendation": "Provide standalone descriptive text.",
+                                "developer_guidance": "Add aria-label.",
+                            }
+                        ],
+                        "recommendations": [],
+                    }
+                })()
+
+        sync_data = {
+            "url": "https://example.org/portal",
+            "forward": [
+                {
+                    "step": 1,
+                    "selenium": {"tag": "a", "text": "Click to Visit", "href": "https://example.org/notices"},
+                    "nvda": {"role": "link", "name": "Click to Visit"},
+                    "comparison": {"status": "MATCH", "name_match": True, "role_match": True},
+                }
+            ],
+            "backward": [],
+        }
+        unified_pkg = {
+            "url": "https://example.org/portal",
+            "synchronized_evidence": sync_data,
+            "correlated_elements": [
+                {
+                    "direction": "forward",
+                    "step": 1,
+                    "correlation": {"status": "MATCH", "confidence": 1.0},
+                    "dom_context": {
+                        "nearest_heading": "Letters & Notices",
+                        "nearest_heading_level": 3,
+                        "parent_section": "Letters & Notices",
+                    }
+                }
+            ],
+            "dom_snapshot": {
+                "headings": [{"level": 3, "text": "Letters & Notices"}],
+                "context_blocks": [{"heading": "Letters & Notices"}],
+            }
+        }
+
+        analyzer = AIAccessibilityAnalyzer(provider=LinkMockProvider())
+        report = analyzer.analyze_synchronized_evidence(sync_data, unified_package=unified_pkg)
+
+        # AI-001 should be adjudicated to RECOMMENDATION (H80) because nearest heading provides programmatic context
+        self.assertEqual(len(report.violations), 0)
+        self.assertEqual(len(report.recommendations), 1)
+        rec = report.recommendations[0]
+        self.assertEqual(rec.category, "BEST_PRACTICE")
+        self.assertEqual(rec.related_guidance.get("success_criterion"), "2.4.4")
+        self.assertEqual(rec.related_guidance.get("technique"), "H80")
+        self.assertEqual(report.summary.compliance_score, 100.0)
+
+    # -------------------------------------------------------------------------
+    # TEST 32: Adjudication: Informative logo lacking alt text retained as violation
+    # -------------------------------------------------------------------------
+    def test_32_adjudication_informative_logo_retained_as_violation(self):
+        class LogoMockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 1,
+                            "total_violations": 1,
+                            "total_recommendations": 0,
+                            "compliance_score": 92.0,
+                            "severity_summary": {"CRITICAL": 0, "MAJOR": 1, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            {
+                                "violation_id": "AI-002",
+                                "scope": "ELEMENT",
+                                "element_reference": {"tag": "img", "src": "images/logo.png"},
+                                "rule_id": "WCAG 1.1.1",
+                                "rule_name": "Non-text Content",
+                                "severity": "MAJOR",
+                                "confidence": 0.95,
+                                "title": "University logo missing alternative text",
+                                "description": "The primary university branding logo has no alt attribute.",
+                                "ai_rationale": "DOM snapshot shows alt=null and image is the sole branding identifier.",
+                                "normative_basis": {
+                                    "success_criterion": "1.1.1",
+                                    "level": "A",
+                                    "requirement": "All non-text content that is presented to the user has a text alternative that serves the equivalent purpose.",
+                                    "failure_condition": "Informative branding logo lacks alt text.",
+                                    "evidence_basis": ["DOM", "VISUAL"],
+                                },
+                                "user_impact": "Screen reader users cannot identify the organization branding.",
+                                "wcag_context": "WCAG 1.1.1 Level A",
+                                "recommendation": "Add descriptive alt text to the logo.",
+                                "developer_guidance": "Add alt='[Organization Name] Logo'.",
+                            }
+                        ],
+                        "recommendations": [],
+                    }
+                })()
+
+        sync_data = {
+            "url": "https://example.org/portal",
+            "forward": [
+                {
+                    "step": 1,
+                    "selenium": {"tag": "a", "text": "Home", "href": "/"},
+                    "nvda": {"role": "link", "name": "Home"},
+                    "comparison": {"status": "MATCH", "name_match": True, "role_match": True},
+                }
+            ],
+            "backward": [],
+        }
+        unified_pkg = {
+            "url": "https://example.org/portal",
+            "dom_snapshot": {
+                "images": [
+                    {
+                        "tag": "img",
+                        "src": "images/logo.png",
+                        "alt": None,
+                        "parent_context": "brand",
+                    }
+                ]
+            }
+        }
+
+        analyzer = AIAccessibilityAnalyzer(provider=LogoMockProvider())
+        report = analyzer.analyze_synchronized_evidence(sync_data, unified_package=unified_pkg)
+
+        # Informative branding logo missing alt must remain a NORMATIVE VIOLATION under WCAG 1.1.1
+        self.assertEqual(len(report.violations), 1)
+        v = report.violations[0]
+        self.assertEqual(v.rule_id, "WCAG 1.1.1")
+        self.assertEqual(v.severity, "MAJOR")
+        self.assertEqual(report.summary.compliance_score, 92.0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
 

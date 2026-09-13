@@ -362,6 +362,7 @@ def assemble_unified_evidence_package(
         "schema_version": "1.0",
         "url": url or synchronized_output.get("url", ""),
         "synchronized_evidence": {
+            "initialization": copy.deepcopy(synchronized_output.get("initialization")),
             "forward": copy.deepcopy(forward_steps),
             "backward": copy.deepcopy(backward_steps),
         },

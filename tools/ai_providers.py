@@ -165,6 +165,7 @@ ACCESSIBILITY_ANALYSIS_SCHEMA = {
             "properties": {
                 "total_elements_analyzed": {"type": "INTEGER"},
                 "total_violations": {"type": "INTEGER"},
+                "total_recommendations": {"type": "INTEGER"},
                 "compliance_score": {"type": "NUMBER"},
                 "severity_summary": {
                     "type": "OBJECT",
@@ -180,6 +181,7 @@ ACCESSIBILITY_ANALYSIS_SCHEMA = {
             "required": [
                 "total_elements_analyzed",
                 "total_violations",
+                "total_recommendations",
                 "compliance_score",
                 "severity_summary",
             ],
@@ -212,6 +214,43 @@ ACCESSIBILITY_ANALYSIS_SCHEMA = {
                     "title": {"type": "STRING"},
                     "description": {"type": "STRING"},
                     "ai_rationale": {"type": "STRING"},
+                    "normative_basis": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "success_criterion": {
+                                "type": "STRING",
+                                "description": "Strictly the WCAG Success Criterion number only e.g. '2.4.4', '1.1.1', '4.1.2'",
+                            },
+                            "level": {
+                                "type": "STRING",
+                                "enum": ["A", "AA", "AAA"],
+                                "description": "WCAG Conformance level: 'A', 'AA', or 'AAA'",
+                            },
+                            "requirement": {
+                                "type": "STRING",
+                                "description": "The exact normative requirement sentence from the WCAG specification",
+                            },
+                            "failure_condition": {
+                                "type": "STRING",
+                                "description": "The specific observed failure condition established by multimodal evidence",
+                            },
+                            "evidence_basis": {
+                                "type": "ARRAY",
+                                "items": {
+                                    "type": "STRING",
+                                    "enum": ["DOM", "NVDA", "VISUAL", "INTERACTION"],
+                                },
+                                "description": "Evidence modalities actually evaluated: DOM, NVDA, VISUAL, INTERACTION",
+                            },
+                        },
+                        "required": [
+                            "success_criterion",
+                            "level",
+                            "requirement",
+                            "failure_condition",
+                            "evidence_basis",
+                        ],
+                    },
                     "user_impact": {"type": "STRING"},
                     "wcag_context": {"type": "STRING"},
                     "recommendation": {"type": "STRING"},
@@ -234,8 +273,57 @@ ACCESSIBILITY_ANALYSIS_SCHEMA = {
                 ],
             },
         },
+        "recommendations": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "recommendation_id": {"type": "STRING"},
+                    "scope": {"type": "STRING", "enum": ["ELEMENT", "PAGE"]},
+                    "element_reference": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "direction": {"type": "STRING"},
+                            "step": {"type": "INTEGER"},
+                            "tag": {"type": "STRING"},
+                            "src": {"type": "STRING"},
+                            "id": {"type": "STRING"},
+                            "selector": {"type": "STRING"},
+                        },
+                    },
+                    "category": {
+                        "type": "STRING",
+                        "enum": ["BEST_PRACTICE", "STRUCTURAL_ENHANCEMENT", "ADVISORY"],
+                    },
+                    "title": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "ai_rationale": {"type": "STRING"},
+                    "user_impact": {"type": "STRING"},
+                    "related_guidance": {
+                        "type": "OBJECT",
+                        "properties": {
+                            "success_criterion": {"type": "STRING"},
+                            "relationship": {"type": "STRING"},
+                            "technique": {"type": "STRING"},
+                        },
+                    },
+                    "developer_guidance": {"type": "STRING"},
+                    "code_example": {"type": "STRING"},
+                },
+                "required": [
+                    "recommendation_id",
+                    "scope",
+                    "category",
+                    "title",
+                    "description",
+                    "ai_rationale",
+                    "user_impact",
+                    "developer_guidance",
+                ],
+            },
+        },
     },
-    "required": ["analysis_status", "summary", "violations"],
+    "required": ["analysis_status", "summary", "violations", "recommendations"],
 }
 
 
@@ -318,6 +406,7 @@ class MockLLMProvider(BaseLLMProvider):
                 "summary": {
                     "total_elements_analyzed": 10,
                     "total_violations": 0,
+                    "total_recommendations": 0,
                     "compliance_score": 100.0,
                     "severity_summary": {
                         "CRITICAL": 0,
@@ -327,6 +416,7 @@ class MockLLMProvider(BaseLLMProvider):
                     },
                 },
                 "violations": [],
+                "recommendations": [],
             }
             return LLMResponse(
                 raw_text=json.dumps(zero_resp),
@@ -343,6 +433,7 @@ class MockLLMProvider(BaseLLMProvider):
                 "summary": {
                     "total_elements_analyzed": 5,
                     "total_violations": 1,
+                    "total_recommendations": 0,
                     "compliance_score": 85.0,
                     "severity_summary": {
                         "CRITICAL": 1,
@@ -369,6 +460,7 @@ class MockLLMProvider(BaseLLMProvider):
                         "developer_guidance": '<a href="/login" aria-label="[Descriptive accessible name]">\n  <svg ...></svg>\n</a>',
                     }
                 ],
+                "recommendations": [],
             }
             return LLMResponse(
                 raw_text=json.dumps(single_resp),
@@ -385,6 +477,7 @@ class MockLLMProvider(BaseLLMProvider):
                 "summary": {
                     "total_elements_analyzed": 12,
                     "total_violations": 2,
+                    "total_recommendations": 0,
                     "compliance_score": 77.0,
                     "severity_summary": {
                         "CRITICAL": 1,
@@ -427,6 +520,7 @@ class MockLLMProvider(BaseLLMProvider):
                         "developer_guidance": '<a href="/details">[Descriptive destination name]</a>',
                     },
                 ],
+                "recommendations": [],
             }
             return LLMResponse(
                 raw_text=json.dumps(multi_resp),
@@ -468,6 +562,7 @@ class MockLLMProvider(BaseLLMProvider):
             "summary": {
                 "total_elements_analyzed": 1,
                 "total_violations": 1,
+                "total_recommendations": 0,
                 "compliance_score": 85.0,
                 "severity_summary": {
                     "CRITICAL": 1,
@@ -494,6 +589,7 @@ class MockLLMProvider(BaseLLMProvider):
                     "developer_guidance": '<a href="/" aria-label="[Descriptive accessible name]">[Descriptive accessible name]</a>',
                 }
             ],
+            "recommendations": [],
         }
 
         return LLMResponse(
@@ -533,6 +629,7 @@ class FallbackLLMProvider(BaseLLMProvider):
             "summary": {
                 "total_elements_analyzed": 0,
                 "total_violations": 0,
+                "total_recommendations": 0,
                 "compliance_score": 0.0,
                 "severity_summary": {
                     "CRITICAL": 0,
@@ -542,6 +639,7 @@ class FallbackLLMProvider(BaseLLMProvider):
                 },
             },
             "violations": [],
+            "recommendations": [],
         }
 
         return LLMResponse(

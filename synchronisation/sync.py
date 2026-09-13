@@ -214,16 +214,20 @@ def capture_synchronized_element(
     parser,
     selenium_details,
     max_wait=None,
+    captured_speech=None,
+    capture_status="OK",
 ):
     """
     Capture NVDA announcement for the newly focused Selenium element
     and compute comparison.
-    Uses adaptive polling up to max_wait seconds to capture speech quickly
-    as soon as it becomes available.
+    Uses causal action speech if provided, or polls extractor adaptively.
     """
-    timeout = max_wait if max_wait is not None else READ_DELAY
-    time.sleep(timeout)
-    nvda_text = extractor.get_new_text()
+    if captured_speech is not None:
+        nvda_text = captured_speech
+    else:
+        timeout = max_wait if max_wait is not None else READ_DELAY
+        time.sleep(timeout)
+        nvda_text = extractor.get_new_text()
 
     events = []
     if nvda_text:
@@ -233,6 +237,9 @@ def capture_synchronized_element(
 
     matched_event = find_matching_nvda_event(selenium_details, events)
     comparison = compare_selenium_and_nvda(selenium_details, matched_event)
+
+    if capture_status == "NVDA_CAPTURE_TIMEOUT" and not matched_event:
+        comparison["status"] = "NVDA_CAPTURE_TIMEOUT"
 
     result = {
         "selenium": selenium_details,
@@ -261,28 +268,43 @@ if __name__ == "__main__":
 
     try:
         driver.maximize_window()
+        print("\n[BROWSER] Navigating to target URL...")
         driver.get(URL)
-        time.sleep(2)
 
-        # Click document body to initialize focus
-        try:
-            driver.find_element(By.TAG_NAME, "body").click()
-        except Exception:
-            pass
+        # Allow page-load speech to settle and establish clean baseline
+        print("[NVDA] Page loading. Draining page initialization speech...")
+        initial_speech, is_settled = extractor.drain_initial_speech()
+        print(f"[NVDA] Baseline established. Initial speech length: {len(initial_speech)} chars (settled={is_settled}).")
+
+        initial_events = []
+        if initial_speech:
+            cleaned_init = nvda_filter.clean(initial_speech)
+            if cleaned_init:
+                initial_events = [ev.to_dict() for ev in parser.parse(cleaned_init)]
+
+        initialization_data = {
+            "phase": "PAGE_INITIALIZATION",
+            "raw_speech": initial_speech,
+            "events": initial_events,
+            "settled": is_settled,
+        }
 
         actions = ActionChains(driver)
 
         # FORWARD TRAVERSAL
         visited_forward = set()
 
-        print("=" * 70)
-        print("FORWARD SYNCHRONIZED TRAVERSAL")
+        print("\n" + "=" * 70)
+        print("FORWARD SYNCHRONIZED TRAVERSAL (TRAVERSAL_READY)")
         print("=" * 70)
 
         for step in range(1, TAB_LIMIT + 1):
-            print(f"\nWaiting for NVDA... Forward Step {step}")
-            actions.send_keys(Keys.TAB).perform()
-            time.sleep(0.2)
+            print(f"\n[TRAVERSAL] Forward Step {step}: Action TAB...")
+
+            def do_tab():
+                actions.send_keys(Keys.TAB).perform()
+
+            step_speech, capture_status = extractor.capture_action_response(do_tab)
 
             try:
                 active = driver.switch_to.active_element
@@ -307,7 +329,14 @@ if __name__ == "__main__":
                 continue
 
             selenium_details = get_element_details(active)
-            result = capture_synchronized_element(extractor, nvda_filter, parser, selenium_details)
+            result = capture_synchronized_element(
+                extractor,
+                nvda_filter,
+                parser,
+                selenium_details,
+                captured_speech=step_speech,
+                capture_status=capture_status,
+            )
             result["step"] = step
             forward_results.append(result)
 
@@ -316,7 +345,7 @@ if __name__ == "__main__":
             if result["nvda"]:
                 print(f"NVDA  : role={result['nvda']['role']}, name={result['nvda']['name']}")
             else:
-                print("NVDA  : (No NVDA event found)")
+                print(f"NVDA  : (No NVDA event found - {capture_status})")
             print(f"Status: {result['comparison']['status']}")
 
         # BACKWARD TRAVERSAL
@@ -327,9 +356,12 @@ if __name__ == "__main__":
         print("=" * 70)
 
         for step in range(1, TAB_LIMIT + 1):
-            print(f"\nWaiting for NVDA... Backward Step {step}")
-            actions.key_down(Keys.SHIFT).send_keys(Keys.TAB).key_up(Keys.SHIFT).perform()
-            time.sleep(0.2)
+            print(f"\n[TRAVERSAL] Backward Step {step}: Action SHIFT+TAB...")
+
+            def do_shift_tab():
+                actions.key_down(Keys.SHIFT).send_keys(Keys.TAB).key_up(Keys.SHIFT).perform()
+
+            step_speech, capture_status = extractor.capture_action_response(do_shift_tab)
 
             try:
                 active = driver.switch_to.active_element
@@ -354,7 +386,14 @@ if __name__ == "__main__":
                 continue
 
             selenium_details = get_element_details(active)
-            result = capture_synchronized_element(extractor, nvda_filter, parser, selenium_details)
+            result = capture_synchronized_element(
+                extractor,
+                nvda_filter,
+                parser,
+                selenium_details,
+                captured_speech=step_speech,
+                capture_status=capture_status,
+            )
             result["step"] = step
             backward_results.append(result)
 
@@ -363,7 +402,7 @@ if __name__ == "__main__":
             if result["nvda"]:
                 print(f"NVDA  : role={result['nvda']['role']}, name={result['nvda']['name']}")
             else:
-                print("NVDA  : (No NVDA event found)")
+                print(f"NVDA  : (No NVDA event found - {capture_status})")
             print(f"Status: {result['comparison']['status']}")
 
     finally:
@@ -375,6 +414,7 @@ if __name__ == "__main__":
 
     final_output = {
         "url": URL,
+        "initialization": initialization_data,
         "forward": forward_results,
         "backward": backward_results,
     }
