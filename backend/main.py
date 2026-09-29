@@ -4,9 +4,13 @@ Exposes REST API endpoints for initiating audits, tracking progress, and retriev
 """
 
 import os
+import re
+import json
 import logging
-from typing import List
-from fastapi import FastAPI, HTTPException, status
+from typing import List, Optional
+from datetime import datetime, timezone
+from urllib.parse import urlparse
+from fastapi import FastAPI, HTTPException, status, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from contextlib import asynccontextmanager
@@ -132,6 +136,77 @@ def get_audit(audit_id: str):
             detail=f"Audit with ID '{audit_id}' was not found."
         )
     return record
+
+
+def generate_report_filename(url: str, timestamp: Optional[str] = None) -> str:
+    """Generate an understandable, human-readable filename for an AI accessibility report."""
+    site_slug = "website"
+    try:
+        clean_url = url if "://" in url else f"https://{url}"
+        parsed = urlparse(clean_url)
+        host = (parsed.hostname or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        clean_host = re.sub(r'[^a-z0-9_-]', '-', host).strip('-')
+        clean_path = re.sub(r'[^a-z0-9_-]', '-', (parsed.path or "").lower()).strip('-')
+        if clean_path and len(clean_path) <= 30:
+            site_slug = f"{clean_host}_{clean_path}"
+        elif clean_host:
+            site_slug = clean_host
+    except Exception:
+        site_slug = "website"
+
+    date_str = ""
+    if timestamp:
+        try:
+            date_str = timestamp.split("T")[0]
+        except Exception:
+            pass
+    if not date_str:
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    return f"{site_slug}_ai_accessibility_report_{date_str}.json"
+
+
+@app.get(
+    "/api/audits/{audit_id}/download",
+    status_code=status.HTTP_200_OK,
+    tags=["Audits"],
+    summary="Download AI accessibility report JSON",
+    description="Download the full AI accessibility analysis report for the specified audit with an understandable, website-specific filename."
+)
+def download_audit_report(audit_id: str):
+    """Download AI accessibility report JSON for an audit."""
+    record = audit_service.get_audit(audit_id)
+    if not record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit with ID '{audit_id}' was not found."
+        )
+    analysis_data = record.analysis or record.result
+    if not analysis_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"AI report for audit '{audit_id}' is not yet available."
+        )
+
+    # Ensure top-level identifiers are present in downloaded payload
+    report_to_export = {
+        **analysis_data,
+        "audit_id": record.audit_id or audit_id,
+        "url": record.url,
+        "created_at": record.created_at,
+    }
+
+    filename = generate_report_filename(record.url, record.created_at)
+    return Response(
+        content=json.dumps(report_to_export, indent=2, ensure_ascii=False),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        }
+    )
 
 
 @app.get(

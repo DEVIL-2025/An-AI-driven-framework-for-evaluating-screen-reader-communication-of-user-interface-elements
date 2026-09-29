@@ -21,9 +21,10 @@ from backend.schemas import AuditStatus
 
 class TestBackendAPI(unittest.TestCase):
 
-    def setUp(self):
-        self.orig_runner = audit_service._audit_runner
-        self.mock_runner = MagicMock(return_value={
+    @classmethod
+    def setUpClass(cls):
+        cls.orig_runner = audit_service._audit_runner
+        cls.mock_runner = MagicMock(return_value={
             "status": "completed",
             "url": "https://example.com",
             "analysis_type": "AI_ACCESSIBILITY_ANALYSIS",
@@ -44,11 +45,15 @@ class TestBackendAPI(unittest.TestCase):
             },
             "output_dir": None,
         })
+        audit_service._audit_runner = cls.mock_runner
+
+    @classmethod
+    def tearDownClass(cls):
+        audit_service._audit_runner = cls.orig_runner
+
+    def setUp(self):
         audit_service._audit_runner = self.mock_runner
         self.client = TestClient(app)
-
-    def tearDown(self):
-        audit_service._audit_runner = self.orig_runner
 
     # 1. GET /api/health
     def test_1_health_check(self):
@@ -316,6 +321,47 @@ class TestBackendAPI(unittest.TestCase):
         res_after = self.client.get("/api/audits")
         self.assertEqual(res_after.status_code, 200)
         self.assertEqual(len(res_after.json()), 0)
+
+    # 15. GET /api/audits/{audit_id}/download returns JSON with understandable website-specific filename
+    def test_15_download_report_with_understandable_filename(self):
+        from backend.main import generate_report_filename
+
+        # 1. Verify filename generation logic for specific websites
+        fn_irctc = generate_report_filename("https://www.irctc.co.in/nget/train-search", "2026-09-29T12:00:00Z")
+        self.assertEqual(fn_irctc, "irctc-co-in_nget-train-search_ai_accessibility_report_2026-09-29.json")
+
+        fn_flipkart = generate_report_filename("https://www.flipkart.com/", "2026-09-29T12:00:00Z")
+        self.assertEqual(fn_flipkart, "flipkart-com_ai_accessibility_report_2026-09-29.json")
+
+        fn_makaut = generate_report_filename("https://makautwb.ac.in/", "2026-09-29T12:00:00Z")
+        self.assertEqual(fn_makaut, "makautwb-ac-in_ai_accessibility_report_2026-09-29.json")
+
+        # 2. Test download endpoint with completed audit
+        res_create = self.client.post("/api/audits", json={"url": "https://www.flipkart.com"})
+        self.assertEqual(res_create.status_code, 201)
+        audit_id = res_create.json()["audit_id"]
+
+        # Wait for worker thread to complete the audit
+        max_wait = 10.0
+        start = time.time()
+        while time.time() - start < max_wait:
+            res_poll = self.client.get(f"/api/audits/{audit_id}")
+            if res_poll.json()["status"] == "completed":
+                break
+            time.sleep(0.1)
+
+        # Download the report
+        res_down = self.client.get(f"/api/audits/{audit_id}/download")
+        self.assertEqual(res_down.status_code, 200)
+        self.assertIn("Content-Disposition", res_down.headers)
+        self.assertIn("flipkart-com_ai_accessibility_report_", res_down.headers["Content-Disposition"])
+        self.assertTrue(res_down.headers["Content-Disposition"].endswith('.json"'))
+
+        # Verify payload is valid JSON report
+        payload = res_down.json()
+        self.assertEqual(payload["analysis_type"], "AI_ACCESSIBILITY_ANALYSIS")
+        self.assertEqual(payload["url"], "https://www.flipkart.com")
+        self.assertEqual(payload["audit_id"], audit_id)
 
 
 if __name__ == "__main__":

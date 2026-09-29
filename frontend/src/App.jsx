@@ -7,6 +7,7 @@ import ViolationCard from './components/ViolationCard'
 import RecommendationCard from './components/RecommendationCard'
 import AuditHistory from './components/AuditHistory'
 import { startAudit, getAuditById } from './services/api'
+import { downloadReportAsJson } from './utils/reportDownload'
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard') // 'dashboard' | 'history'
@@ -68,6 +69,11 @@ function App() {
     } catch (err) {
       setError(err.message || `Failed to load audit ${auditId}`)
     }
+  }
+
+  const handleDownloadReport = () => {
+    if (!auditResult) return
+    downloadReportAsJson(auditResult)
   }
 
   // Extract analysis fields if result exists
@@ -144,7 +150,7 @@ function App() {
               </div>
             )}
 
-            {/* Banner when viewing a previously executed audit */}
+            {/* Banner when viewing an executed audit */}
             {auditResult && auditResult.audit_id && !isLoading && (
               <div className="glass-card flex flex-wrap items-center justify-between gap-3 px-5 py-3 rounded-2xl border border-white text-xs text-slate-600 shadow-xs">
                 <div className="flex items-center gap-2.5">
@@ -156,13 +162,26 @@ function App() {
                     </span>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setCurrentView('history')}
-                  className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
-                >
-                  View All Audits &rarr;
-                </button>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleDownloadReport}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200 rounded-xl transition-all shadow-xs cursor-pointer"
+                    title={`Download AI accessibility report for ${auditResult.url || 'website'}`}
+                  >
+                    <svg className="w-3.5 h-3.5 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download Report</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView('history')}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer px-1"
+                  >
+                    View All Audits &rarr;
+                  </button>
+                </div>
               </div>
             )}
 
@@ -182,10 +201,48 @@ function App() {
             />
 
             {/* 3. Summary Metrics Cards */}
-            <section aria-labelledby="summary-heading">
+            <section aria-labelledby="summary-heading" className="space-y-4">
               <h2 id="summary-heading" className="sr-only">
                 Audit Summary Metrics
               </h2>
+
+              {/* Report Header Bar with prominent Download Report Button */}
+              {auditResult && !isLoading && (
+                <div className="glass-card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 rounded-2xl border border-blue-100 bg-white/80 shadow-xs">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
+                        Report Generated
+                      </span>
+                      <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">
+                        AI Accessibility Audit Report
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-600 font-medium">
+                      Target website: <span className="font-mono font-bold text-slate-900">{auditResult.url || url}</span>
+                      {auditResult.created_at && (
+                        <span className="text-slate-400 ml-2 hidden sm:inline">
+                          ({new Date(auditResult.created_at).toLocaleString()})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadReport}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-sm shadow-blue-500/20 hover:shadow-md hover:shadow-blue-500/30 transition-all cursor-pointer shrink-0"
+                    aria-label={`Download AI Accessibility Report for ${auditResult.url || 'website'}`}
+                  >
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download Report (JSON)</span>
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <SummaryCard
                   title="Compliance Score"
