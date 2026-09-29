@@ -190,11 +190,6 @@ function App() {
                 <SummaryCard
                   title="Compliance Score"
                   value={summary ? `${summary.compliance_score}%` : '—'}
-                  subtitle={
-                    summary
-                      ? 'Calculated via weighted severity deduction'
-                      : 'Awaiting audit execution'
-                  }
                   icon={
                     <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -205,11 +200,6 @@ function App() {
                 <SummaryCard
                   title="Total Violations"
                   value={summary !== undefined && summary !== null ? String(summary.total_violations) : '—'}
-                  subtitle={
-                    summary
-                      ? 'Validated by Gemini AI against WCAG 2.1'
-                      : 'No active scan results'
-                  }
                   icon={
                     <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -220,11 +210,6 @@ function App() {
                 <SummaryCard
                   title="Recommendations"
                   value={summary !== undefined && summary !== null ? String(summary.total_recommendations ?? recommendations.length) : '—'}
-                  subtitle={
-                    summary
-                      ? 'Advisory best practices (0 score penalty)'
-                      : 'Structural enhancements'
-                  }
                   icon={
                     <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -235,11 +220,6 @@ function App() {
                 <SummaryCard
                   title="Elements Analyzed"
                   value={summary ? String(summary.total_elements_analyzed) : '—'}
-                  subtitle={
-                    summary
-                      ? 'Forward Tab & Reverse Shift+Tab steps'
-                      : 'Elements focusable by keyboard'
-                  }
                   icon={
                     <svg className="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
@@ -257,11 +237,6 @@ function App() {
                       : 'Not Started'
                   }
                   statusType={auditResult ? auditStatus : null}
-                  subtitle={
-                    auditResult
-                      ? `Analysis: ${analysis?.analysis_status || 'DONE'}`
-                      : 'Enter URL and Tab Limit above'
-                  }
                   icon={
                     auditStatus === 'completed' ? (
                       <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -338,7 +313,7 @@ function App() {
                 <div className="space-y-4">
                   {violations.map((v, index) => (
                     <ViolationCard
-                      key={v.violation_id || `v-${index}`}
+                      key={v.violation_id ? `${v.violation_id}-${index}` : `v-${index}`}
                       violation={v}
                     />
                   ))}
@@ -369,7 +344,7 @@ function App() {
                 <div className="space-y-4">
                   {recommendations.map((rec, index) => (
                     <RecommendationCard
-                      key={rec.recommendation_id || `rec-${index}`}
+                      key={rec.recommendation_id ? `${rec.recommendation_id}-${index}` : `rec-${index}`}
                       recommendation={rec}
                     />
                   ))}

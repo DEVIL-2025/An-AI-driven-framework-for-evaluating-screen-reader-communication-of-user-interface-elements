@@ -95,9 +95,11 @@ export default function SummaryCard({ title, value, subtitle, icon, statusType }
             {value}
           </div>
         )}
-        <p className="text-xs text-slate-700 mt-1.5 font-medium leading-relaxed truncate">
-          {subtitle}
-        </p>
+        {subtitle && (
+          <p className="text-xs text-slate-700 mt-1.5 font-medium leading-relaxed truncate">
+            {subtitle}
+          </p>
+        )}
       </div>
     </div>
   )

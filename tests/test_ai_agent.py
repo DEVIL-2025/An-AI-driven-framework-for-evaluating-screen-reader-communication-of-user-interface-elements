@@ -1663,6 +1663,166 @@ class TestAIAccessibilityAgent(unittest.TestCase):
         self.assertEqual(v.severity, "MAJOR")
         self.assertEqual(report.summary.compliance_score, 92.0)
 
+    # -------------------------------------------------------------------------
+    # TEST 34: Unique sequential recommendation and violation IDs
+    # -------------------------------------------------------------------------
+    def test_34_unique_sequential_recommendation_and_violation_ids(self):
+        # 1. Deduplication re-indexes duplicate recommendation IDs sequentially
+        rec_a = AIRecommendation(
+            recommendation_id="REC-001",
+            category="BEST_PRACTICE",
+            scope="PAGE",
+            title="Improve Link Purpose",
+            description="Descriptive text",
+            ai_rationale="Benefits users",
+            user_impact="High",
+            developer_guidance="Use aria-label",
+        )
+        rec_b = AIRecommendation(
+            recommendation_id="REC-002",
+            category="STRUCTURAL_ENHANCEMENT",
+            scope="ELEMENT",
+            title="Add Decorative Alt Text",
+            description="Descriptive text",
+            ai_rationale="Benefits users",
+            user_impact="Medium",
+            developer_guidance="Add alt=''",
+        )
+        rec_c = AIRecommendation(
+            recommendation_id="REC-002",  # Duplicate REC-002 from adjudication
+            category="BEST_PRACTICE",
+            scope="ELEMENT",
+            title="Provide Standalone Descriptive Link Text",
+            description="Descriptive text",
+            ai_rationale="Benefits users",
+            user_impact="High",
+            developer_guidance="Make link text unique",
+        )
+        deduped_recs = deduplicate_recommendations([rec_a, rec_b, rec_c])
+        self.assertEqual(len(deduped_recs), 3)
+        rec_ids = [r.recommendation_id for r in deduped_recs]
+        self.assertEqual(rec_ids, ["REC-001", "REC-002", "REC-003"])
+        self.assertEqual(len(rec_ids), len(set(rec_ids)))  # All IDs strictly unique
+
+        # 2. Deduplication re-indexes duplicate violation IDs sequentially
+        v_a = AIViolationFinding(
+            violation_id="AI-001",
+            scope="ELEMENT",
+            element_reference={"step": 1},
+            rule_id="WCAG 4.1.2",
+            rule_name="Name, Role, Value",
+            severity="CRITICAL",
+            confidence=0.9,
+            title="Unlabelled Button A",
+            description="Missing accessible name",
+            ai_rationale="Violates 4.1.2",
+            user_impact="High",
+            wcag_context="Level A",
+            recommendation="Add label",
+            developer_guidance="Use aria-label",
+        )
+        v_b = AIViolationFinding(
+            violation_id="AI-001",  # Overlapping ID from batch 2
+            scope="ELEMENT",
+            element_reference={"step": 2},
+            rule_id="WCAG 1.3.1",
+            rule_name="Info and Relationships",
+            severity="MAJOR",
+            confidence=0.85,
+            title="Unlabelled Form Field B",
+            description="Missing label element",
+            ai_rationale="Violates 1.3.1",
+            user_impact="High",
+            wcag_context="Level A",
+            recommendation="Associate label",
+            developer_guidance="Use <label for>",
+        )
+        deduped_violations = deduplicate_violations([v_a, v_b])
+        self.assertEqual(len(deduped_violations), 2)
+        v_ids = [v.violation_id for v in deduped_violations]
+        self.assertEqual(v_ids, ["AI-001", "AI-002"])
+        self.assertEqual(len(v_ids), len(set(v_ids)))  # All IDs strictly unique
+
+        # 3. Full analyzer run produces unique recommendation IDs when adjudication converts a finding
+        class AdjudicationCollisionMockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 2,
+                            "total_violations": 1,
+                            "total_recommendations": 2,
+                            "compliance_score": 100.0,
+                            "severity_summary": {"CRITICAL": 0, "MAJOR": 0, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            # Gemini returns this as AI-002, which Gate 4 converts to a recommendation
+                            {
+                                "violation_id": "AI-002",
+                                "scope": "ELEMENT",
+                                "element_reference": {"step": 1, "direction": "forward"},
+                                "rule_id": "WCAG 2.4.4",
+                                "rule_name": "Link Purpose (In Context)",
+                                "severity": "MINOR",
+                                "confidence": 0.8,
+                                "title": "Ambiguous Generic Link Text",
+                                "description": "Link text 'Click to Visit' is generic.",
+                                "ai_rationale": "Link text should describe destination.",
+                                "user_impact": "Screen reader users need clear links.",
+                                "wcag_context": "WCAG 2.4.4 Level A",
+                                "recommendation": "Provide unique text.",
+                                "developer_guidance": "Add aria-label.",
+                            }
+                        ],
+                        "recommendations": [
+                            # Gemini ALSO returns REC-001 and REC-002
+                            {
+                                "recommendation_id": "REC-001",
+                                "scope": "PAGE",
+                                "category": "STRUCTURAL_ENHANCEMENT",
+                                "title": "Add Skip Navigation Link",
+                                "description": "Add skip link",
+                                "ai_rationale": "Improves bypass",
+                                "user_impact": "Keyboard users",
+                                "developer_guidance": "<a href='#main'>Skip</a>",
+                            },
+                            {
+                                "recommendation_id": "REC-002",
+                                "scope": "ELEMENT",
+                                "category": "STRUCTURAL_ENHANCEMENT",
+                                "title": "Add Decorative Alt Text",
+                                "description": "Decorative image",
+                                "ai_rationale": "Reduces noise",
+                                "user_impact": "Screen reader users",
+                                "developer_guidance": "alt=''",
+                            }
+                        ],
+                    },
+                })()
+
+        analyzer = AIAccessibilityAnalyzer(provider=AdjudicationCollisionMockProvider())
+        sync_data = {
+            "url": "https://example.org/test",
+            "forward": [
+                {
+                    "step": 1,
+                    "selenium": {"tag": "a", "text": "Click to Visit", "href": "/about"},
+                    "nvda": {"role": "link", "name": "Click to Visit"},
+                    "context": {"nearest_heading": "About Us", "parent_section": "Company Info"},
+                    "comparison": {"status": "MATCH", "name_match": True, "role_match": True},
+                }
+            ],
+            "backward": [],
+        }
+        report = analyzer.analyze_synchronized_evidence(sync_data)
+        self.assertEqual(len(report.recommendations), 3)
+        final_rec_ids = [r.recommendation_id for r in report.recommendations]
+        self.assertEqual(final_rec_ids, ["REC-001", "REC-002", "REC-003"])
+        self.assertEqual(len(final_rec_ids), len(set(final_rec_ids)))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

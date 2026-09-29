@@ -406,7 +406,7 @@ def prepare_compact_evidence(
             nvda = item.get("nvda") or {}
             comp = item.get("comparison") or {}
             val_ctx = item.get("validation_context")
-            dom_ctx = item.get("dom_context") or {}
+            dom_ctx = item.get("dom_context") or item.get("context") or {}
         else:
             primary_step = item.get("step", idx)
             primary_dir = "forward"
@@ -414,8 +414,8 @@ def prepare_compact_evidence(
             sel = item.get("selenium") or {}
             nvda = item.get("nvda") or {}
             comp = item.get("comparison") or {}
-            val_ctx = None
-            dom_ctx = {}
+            val_ctx = item.get("validation_context")
+            dom_ctx = item.get("context") or item.get("dom_context") or {}
             stable_id = sel.get("id") or f"step_{primary_step}" if sel.get("id") else f"step_{primary_step}"
             traversal_steps = [{"direction": "forward", "step": primary_step}]
 
@@ -597,6 +597,7 @@ def deduplicate_violations(violations: List[AIViolationFinding]) -> List[AIViola
     """
     Conservatively deduplicate findings sharing the exact same criterion, scope,
     element reference, and normalized issue title.
+    Re-indexes all retained violations to guarantee strictly unique, sequential IDs (AI-001, AI-002, ...).
     """
     seen = set()
     deduped = []
@@ -618,13 +619,25 @@ def deduplicate_violations(violations: List[AIViolationFinding]) -> List[AIViola
         if key not in seen:
             seen.add(key)
             deduped.append(v)
-    return deduped
+
+    # Guarantee strictly unique, sequential IDs across all batches and adjudicated findings
+    reindexed = []
+    for idx, v in enumerate(deduped, 1):
+        target_id = f"AI-{idx:03d}"
+        if v.violation_id != target_id:
+            v_dict = v.model_dump()
+            v_dict["violation_id"] = target_id
+            reindexed.append(AIViolationFinding(**v_dict))
+        else:
+            reindexed.append(v)
+    return reindexed
 
 
 def deduplicate_recommendations(recommendations: List[AIRecommendation]) -> List[AIRecommendation]:
     """
     Conservatively deduplicate recommendations sharing the exact same category, scope,
     element reference, and normalized recommendation title.
+    Re-indexes all retained recommendations to guarantee strictly unique, sequential IDs (REC-001, REC-002, ...).
     """
     seen = set()
     deduped = []
@@ -646,7 +659,18 @@ def deduplicate_recommendations(recommendations: List[AIRecommendation]) -> List
         if key not in seen:
             seen.add(key)
             deduped.append(r)
-    return deduped
+
+    # Guarantee strictly unique, sequential IDs across all batches and adjudicated findings
+    reindexed = []
+    for idx, r in enumerate(deduped, 1):
+        target_id = f"REC-{idx:03d}"
+        if r.recommendation_id != target_id:
+            r_dict = r.model_dump()
+            r_dict["recommendation_id"] = target_id
+            reindexed.append(AIRecommendation(**r_dict))
+        else:
+            reindexed.append(r)
+    return reindexed
 
 
 # =============================================================================
@@ -2196,7 +2220,7 @@ class AIAccessibilityAnalyzer:
             },
         )
 
-    def _is_advisory_pattern(self, raw_v: Dict[str, Any]) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    def _is_advisory_pattern(self, raw_v: Dict[str, Any], rec_count: int = 1) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
         Critical Normative WCAG Gate:
         Adjudicates whether a raw finding represents an advisory best practice / structural
@@ -2236,7 +2260,7 @@ class AIAccessibilityAnalyzer:
             "primary main landmark", "missing primary <main>"
         ])
         if is_main_issue:
-            rec_id = str(raw_v.get("violation_id", "REC-001")).replace("AI-", "REC-")
+            rec_id = f"REC-{rec_count:03d}"
             return True, {
                 "recommendation_id": rec_id,
                 "scope": str(raw_v.get("scope", "PAGE")),
@@ -2261,7 +2285,7 @@ class AIAccessibilityAnalyzer:
             "starting directly with <h2>", "missing <h1>"
         ])
         if is_h1_issue:
-            rec_id = str(raw_v.get("violation_id", "REC-002")).replace("AI-", "REC-")
+            rec_id = f"REC-{rec_count:03d}"
             return True, {
                 "recommendation_id": rec_id,
                 "scope": str(raw_v.get("scope", "PAGE")),
@@ -2281,7 +2305,7 @@ class AIAccessibilityAnalyzer:
 
         # Check 3: Explicit Best Practice label
         if "best practice" in rule_name.lower() or "best practice" in title.lower():
-            rec_id = str(raw_v.get("violation_id", "REC-003")).replace("AI-", "REC-")
+            rec_id = f"REC-{rec_count:03d}"
             return True, {
                 "recommendation_id": rec_id,
                 "scope": str(raw_v.get("scope", "PAGE")),
@@ -2326,7 +2350,7 @@ class AIAccessibilityAnalyzer:
         combined_text = f"{title} {desc} {rationale}".lower()
 
         # Gate 1: Check standard advisory patterns (landmarks, heading outline, explicit best practice)
-        is_advisory, advisory_dict = self._is_advisory_pattern(raw_v)
+        is_advisory, advisory_dict = self._is_advisory_pattern(raw_v, rec_count)
         if is_advisory and advisory_dict:
             return "RECOMMENDATION", advisory_dict, "Advisory architectural pattern"
 
@@ -2470,7 +2494,7 @@ class AIAccessibilityAnalyzer:
                     has_named_parent = True
 
             if has_named_parent:
-                rec_id = str(raw_v.get("violation_id", f"REC-{rec_count:03d}")).replace("AI-", "REC-")
+                rec_id = f"REC-{rec_count:03d}"
                 return "RECOMMENDATION", {
                     "recommendation_id": rec_id,
                     "scope": str(raw_v.get("scope", "ELEMENT")),
@@ -2509,7 +2533,7 @@ class AIAccessibilityAnalyzer:
                         break
 
             if is_mapped_to_412 or demands_solution or has_purpose_text:
-                rec_id = str(raw_v.get("violation_id", f"REC-{rec_count:03d}")).replace("AI-", "REC-")
+                rec_id = f"REC-{rec_count:03d}"
                 return "RECOMMENDATION", {
                     "recommendation_id": rec_id,
                     "scope": str(raw_v.get("scope", "ELEMENT")),
@@ -2576,7 +2600,7 @@ class AIAccessibilityAnalyzer:
                     has_context = True
 
             if has_context:
-                rec_id = str(raw_v.get("violation_id", f"REC-{rec_count:03d}")).replace("AI-", "REC-")
+                rec_id = f"REC-{rec_count:03d}"
                 return "RECOMMENDATION", {
                     "recommendation_id": rec_id,
                     "scope": str(raw_v.get("scope", "PAGE")),

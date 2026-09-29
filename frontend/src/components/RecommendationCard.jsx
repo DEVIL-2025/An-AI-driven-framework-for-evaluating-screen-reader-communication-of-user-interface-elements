@@ -11,11 +11,18 @@ export default function RecommendationCard({ recommendation }) {
     scope,
     title,
     description,
-    rationale,
-    remediation_guidance,
-    code_example,
-    related_guidance,
+    element_reference,
   } = recommendation
+
+  // Robust multi-schema field resolution across AI report formats
+  const rationaleText = recommendation.ai_rationale || recommendation.rationale
+  const guidanceText =
+    recommendation.developer_guidance ||
+    recommendation.remediation_guidance ||
+    recommendation.recommendation
+  const impactText = recommendation.user_impact
+  const relatedGuidance = recommendation.related_guidance
+  const codeExample = recommendation.code_example
 
   const getCategoryBadge = () => {
     switch (category?.toUpperCase()) {
@@ -46,10 +53,15 @@ export default function RecommendationCard({ recommendation }) {
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
               {scope?.replace(/_/g, ' ') || 'PAGE LEVEL'}
             </span>
-            {related_guidance && related_guidance.success_criterion && (
+            {element_reference && element_reference.step != null && (
+              <span className="text-xs font-mono font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                Step {element_reference.step}{element_reference.direction ? ` (${element_reference.direction})` : ''}
+              </span>
+            )}
+            {relatedGuidance && relatedGuidance.success_criterion && (
               <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                {related_guidance.relationship || 'Advisory'} to {related_guidance.success_criterion}
-                {related_guidance.technique ? ` (${related_guidance.technique})` : ''}
+                {relatedGuidance.relationship || 'Advisory'} to {relatedGuidance.success_criterion}
+                {relatedGuidance.technique ? ` (${relatedGuidance.technique})` : ''}
               </span>
             )}
             <span className="text-xs font-mono font-bold text-slate-500">
@@ -97,38 +109,67 @@ export default function RecommendationCard({ recommendation }) {
 
       {/* Expandable Guidance */}
       {isExpanded && (
-        <div id={`rec-details-${recommendation_id}`} className="mt-4 space-y-3 pt-3 border-t border-blue-100">
-          {rationale && (
-            <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200">
-              <h5 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
-                Rationale & Impact
-              </h5>
-              <p className="text-xs text-slate-700 leading-relaxed">{rationale}</p>
+        <div id={`rec-details-${recommendation_id}`} className="mt-4 space-y-4 pt-4 border-t border-blue-100">
+          {/* Developer Remediation Guidance */}
+          {guidanceText && (
+            <div className="bg-emerald-50/70 rounded-2xl p-4 border border-emerald-200 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-900 uppercase tracking-wider">
+                <svg className="w-4 h-4 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Developer Guidance & Remediation
+              </div>
+              <p className="text-xs text-slate-900 leading-relaxed font-medium">{guidanceText}</p>
             </div>
           )}
 
-          {remediation_guidance && (
-            <div className="bg-blue-50/60 rounded-2xl p-4 border border-blue-100">
-              <h5 className="text-xs font-bold uppercase tracking-wider text-blue-800 mb-1">
-                Suggested Remediation
-              </h5>
-              <p className="text-xs text-slate-700 leading-relaxed">{remediation_guidance}</p>
+          {/* Rationale & User Impact Grid */}
+          {(rationaleText || impactText) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {rationaleText && (
+                <div className="bg-blue-50/70 rounded-2xl p-4 border border-blue-200 space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-blue-900 uppercase tracking-wider">
+                    <svg className="w-4 h-4 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    AI Rationale
+                  </div>
+                  <p className="text-xs text-slate-900 leading-relaxed font-medium">{rationaleText}</p>
+                </div>
+              )}
+
+              {impactText && (
+                <div className="bg-amber-50/70 rounded-2xl p-4 border border-amber-200 space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-amber-900 uppercase tracking-wider">
+                    <svg className="w-4 h-4 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    User Impact
+                  </div>
+                  <p className="text-xs text-slate-900 leading-relaxed font-medium">{impactText}</p>
+                </div>
+              )}
             </div>
           )}
 
-          {code_example && (
-            <div className="bg-slate-900 rounded-2xl p-4 text-slate-100">
-              <h5 className="text-xs font-mono font-semibold text-slate-400 mb-2 uppercase">
+          {/* Code Example Implementation */}
+          {codeExample && (
+            <div className="bg-slate-900 rounded-2xl p-4 text-slate-100 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-mono font-semibold text-slate-400 uppercase">
+                <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
                 Example Implementation
-              </h5>
-              <pre className="text-xs font-mono overflow-x-auto p-2 bg-slate-950/60 rounded-xl text-emerald-300">
-                <code>{code_example}</code>
+              </div>
+              <pre className="text-xs font-mono overflow-x-auto p-3 bg-slate-950/80 rounded-xl text-emerald-300 border border-slate-800">
+                <code>{codeExample}</code>
               </pre>
             </div>
           )}
 
+          {/* Footer Note */}
           <div className="flex items-center gap-2 text-xs text-slate-500 italic pt-1">
-            <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>Informational best practice recommendation. Carries zero score penalty.</span>
