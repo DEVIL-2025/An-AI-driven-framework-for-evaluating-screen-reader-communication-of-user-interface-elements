@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from enum import Enum
@@ -116,11 +117,15 @@ class NVDATextExtractor:
         max_timeout: float = 6.0,
         settle_interval: float = 0.6,
         poll_interval: float = 0.1,
+        from_baseline: bool = False,
     ) -> Tuple[str, bool]:
         """
         Monitor Speech Viewer during page load, classify all accumulated speech as
         page initialization speech, wait for it to settle adaptively, and establish
         a clean traversal baseline boundary.
+
+        If from_baseline is True, only speech produced strictly after baseline_text
+        is captured (preventing historical OS/desktop speech from leaking into the audit).
 
         Returns:
             (initial_speech_text, is_settled)
@@ -148,8 +153,10 @@ class NVDATextExtractor:
         is_settled = (time.time() - last_change_time >= settle_interval)
 
         # Compute initial speech produced during this session.
-        # Draining captures all accumulated page-load speech up to this point.
-        initial_speech = current_full.strip()
+        if from_baseline and self.baseline_text and current_full.startswith(self.baseline_text):
+            initial_speech = current_full[len(self.baseline_text):].strip()
+        else:
+            initial_speech = current_full.strip()
 
         # Establish clean baseline for traversal
         self.mark_baseline()
@@ -164,7 +171,7 @@ class NVDATextExtractor:
     def capture_action_response(
         self,
         action_fn: Optional[Callable[[], Any]] = None,
-        timeout: float = 2.5,
+        timeout: float = float(os.environ.get("TRAVERSAL_TIMEOUT", 1.0)),
         poll_interval: float = 0.05,
         settle_interval: float = 0.25,
     ) -> Tuple[str, str]:

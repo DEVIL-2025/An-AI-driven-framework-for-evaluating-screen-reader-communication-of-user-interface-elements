@@ -19,7 +19,7 @@ def run_live_listener(enable_ai=True):
     from tools.nvda_classifier import NVDAClassifier
     from tools.ai_agent import AIAccessibilityAgent
 
-    READ_DELAY = 2
+    READ_DELAY = 1
     POLL_DELAY = 0.2
 
     print("\n" + "=" * 60)
@@ -147,7 +147,7 @@ def run_live_listener(enable_ai=True):
 def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
     """Automated Mode: Traverses a webpage via Selenium, syncing DOM with NVDA and running AI accessibility analysis."""
     import os
-    import sys
+    import time
     from synchronisation.sync import (
         capture_synchronized_element,
         get_element_details,
@@ -155,15 +155,15 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
     from tools.nvda_tool import NVDATextExtractor
     from tools.nvda_filter import NVDAFilter
     from tools.nvda_parser import NVDAParser
-    from tools.nvda_classifier import NVDAClassifier
-    from tools.ai_agent import AIAccessibilityAgent, AIAccessibilityAnalyzer
+    from tools.ai_agent import AIAccessibilityAnalyzer
     from selenium import webdriver
     from selenium.webdriver.common.by import By
     from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.common.action_chains import ActionChains
     from selenium.common.exceptions import StaleElementReferenceException
-    import time
     import json
+
+    TRAVERSAL_DELAY = float(os.environ.get("TRAVERSAL_DELAY", 1.0))
 
     print("\n" + "=" * 70)
     print("MODE: AUTOMATED BROWSER + NVDA SYNCHRONIZED AUDIT")
@@ -185,7 +185,6 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
     filter_tool = NVDAFilter()
     parser = NVDAParser()
-    classifier = NVDAClassifier()
 
     print("\nLaunching Chrome...")
     driver = webdriver.Chrome()
@@ -196,12 +195,14 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
     try:
         driver.maximize_window()
+        # Mark baseline before navigation so historical Windows OS/desktop speech is excluded
+        extractor.mark_baseline()
         print(f"[PAGE] Navigating to target URL: {url}")
         driver.get(url)
 
         # Explicit Lifecycle State: Drain pre-traversal page initialization speech
         print("[NVDA] Page loading. Draining pre-traversal speech buffer...")
-        initial_speech, is_settled = extractor.drain_initial_speech()
+        initial_speech, is_settled = extractor.drain_initial_speech(from_baseline=True)
         print(f"[NVDA] Baseline established. Initial speech length: {len(initial_speech)} chars (settled={is_settled}).")
 
         initial_events = []
@@ -210,10 +211,21 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
             if cleaned_init:
                 initial_events = [ev.to_dict() for ev in parser.parse(cleaned_init)]
 
+        # Check if an interactive control already holds initial focus upon page load
+        initial_focused_element = None
+        try:
+            active_init = driver.switch_to.active_element
+            if active_init and active_init.tag_name.lower() not in ("body", "html"):
+                initial_focused_element = get_element_details(active_init)
+                print(f"[PAGE] Initial autofocus element detected: <{initial_focused_element.get('tag')}> id='{initial_focused_element.get('id')}'")
+        except Exception:
+            pass
+
         initialization_data = {
             "phase": "PAGE_INITIALIZATION",
             "raw_speech": initial_speech,
             "events": initial_events,
+            "initial_focused_element": initial_focused_element,
             "settled": is_settled,
         }
 
@@ -267,6 +279,7 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
             nvda_info = result["nvda"]["role"] if result["nvda"] else f"None ({capture_status})"
             print(f"Step {step:02d} | DOM: <{selenium_details['tag']}> '{selenium_details['text'][:30]}' | NVDA: {nvda_info} -> {result['comparison']['status']}")
+            time.sleep(TRAVERSAL_DELAY)
 
         # Backward Traversal
         visited_backward = set()
@@ -316,6 +329,7 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
             nvda_info = result["nvda"]["role"] if result["nvda"] else f"None ({capture_status})"
             print(f"Step {step:02d} | DOM: <{selenium_details['tag']}> '{selenium_details['text'][:30]}' | NVDA: {nvda_info} -> {result['comparison']['status']}")
+            time.sleep(TRAVERSAL_DELAY)
 
     finally:
         print("\nTraversal finished. Extracting semantic DOM snapshot & screenshot evidence...")
@@ -410,7 +424,9 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
         ai_report_model = ai_analyzer.analyze_synchronized_evidence(
             final_output,
             unified_package=unified_package,
+            screenshot_path=screenshot_path,
             screenshot_metadata=screenshot_metadata,
+            output_dir=output_dir,
         )
         ai_analyzer.save_ai_report(ai_report_model, ai_rep_path)
         ai_report_dict = ai_report_model.to_dict()
@@ -518,12 +534,18 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
 
 def run_unit_tests():
-    """Run automated parser, AI agent, backend, and database tests."""
+    """Run comprehensive automated test suite across all modules."""
     from tests.test_parser import TestNVDAParserGeneric
     from tests.test_ai_agent import TestAIAccessibilityAgent
     from tests.test_gemini_multimodal import TestGeminiMultimodalIntegration
     from tests.test_backend import TestBackendAPI
     from tests.test_database import TestPostgreSQLDatabase
+    from tests.test_dom_extractor import TestDOMExtractorUnit
+    from tests.test_screenshot_capture import TestScreenshotCapture
+    from tests.test_evidence_correlator import TestEvidenceCorrelator
+    from tests.test_validation_irctc import TestIRCTCValidationCase
+    from tests.test_nvda_synchronization import TestNVDASynchronizationLifecycle
+    from tests.test_audit_evidence_pipeline import TestAuditEvidencePipeline
 
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
@@ -532,6 +554,12 @@ def run_unit_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestGeminiMultimodalIntegration))
     suite.addTests(loader.loadTestsFromTestCase(TestBackendAPI))
     suite.addTests(loader.loadTestsFromTestCase(TestPostgreSQLDatabase))
+    suite.addTests(loader.loadTestsFromTestCase(TestDOMExtractorUnit))
+    suite.addTests(loader.loadTestsFromTestCase(TestScreenshotCapture))
+    suite.addTests(loader.loadTestsFromTestCase(TestEvidenceCorrelator))
+    suite.addTests(loader.loadTestsFromTestCase(TestIRCTCValidationCase))
+    suite.addTests(loader.loadTestsFromTestCase(TestNVDASynchronizationLifecycle))
+    suite.addTests(loader.loadTestsFromTestCase(TestAuditEvidencePipeline))
 
     runner = unittest.TextTestRunner(verbosity=2)
     runner.run(suite)

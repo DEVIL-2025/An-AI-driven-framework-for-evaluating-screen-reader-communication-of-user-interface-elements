@@ -166,7 +166,7 @@ def calculate_candidate_score(
 
 def extract_dom_context(dom_el: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Extract relevant semantic, structural, and surrounding context from a matched DOM element.
+    Extract relevant semantic, structural, validation, and surrounding context from a matched DOM element.
     Preserves null/empty values without inventing data.
     """
     return {
@@ -175,10 +175,22 @@ def extract_dom_context(dom_el: Dict[str, Any]) -> Dict[str, Any]:
         "name": dom_el.get("name") or None,
         "type": dom_el.get("type"),
         "text": dom_el.get("text") or None,
+        "placeholder": dom_el.get("placeholder") or None,
+        "label_text": dom_el.get("label_text") or None,
+        "associated_label_selector": dom_el.get("associated_label_selector") or None,
         "role": dom_el.get("role"),
         "aria_label": dom_el.get("aria_label"),
         "aria_labelledby_text": dom_el.get("aria_labelledby_text"),
         "aria_describedby": dom_el.get("aria_describedby"),
+        "aria_describedby_text": dom_el.get("aria_describedby_text"),
+        "aria_errormessage": dom_el.get("aria_errormessage"),
+        "aria_errormessage_text": dom_el.get("aria_errormessage_text"),
+        "aria_invalid": dom_el.get("aria_invalid"),
+        "required": dom_el.get("required"),
+        "class": dom_el.get("class"),
+        "native_validity": dom_el.get("native_validity"),
+        "nearest_form_or_group": dom_el.get("nearest_form_or_group"),
+        "validation_context": dom_el.get("validation_context"),
         "aria_expanded": dom_el.get("aria_expanded"),
         "aria_hidden": dom_el.get("aria_hidden"),
         "parent_section_id": dom_el.get("parent_section_id"),
@@ -190,6 +202,71 @@ def extract_dom_context(dom_el: Dict[str, Any]) -> Dict[str, Any]:
         "href": dom_el.get("href"),
         "css_path": dom_el.get("css_path"),
     }
+
+
+def compute_stable_element_identity(
+    selenium_el: Optional[Dict[str, Any]] = None,
+    dom_el: Optional[Dict[str, Any]] = None,
+    dom_context: Optional[Dict[str, Any]] = None,
+) -> str:
+    """
+    Establish a stable, deterministic identity for a captured DOM element.
+    Evaluates in strict hierarchical preference:
+    1. DOM element ID or Selenium element ID
+    2. Form control name attribute with tag
+    3. Stable CSS selector / path
+    4. Tag + structural context (type, placeholder, aria-label, text)
+    5. Deterministic normalized composite signature
+    """
+    s_el = selenium_el or {}
+    d_el = dom_el or {}
+    d_ctx = dom_context or {}
+
+    tag = (d_ctx.get("tag") or s_el.get("tag") or d_el.get("tag") or "").strip().lower()
+
+    # 1. Stable DOM ID or Selenium ID
+    elem_id = (d_ctx.get("id") or s_el.get("id") or d_el.get("id") or "").strip()
+    if elem_id and elem_id.lower() not in ("none", "null", "undefined"):
+        return f"id:{elem_id}"
+
+    # 2. Form control name attribute with tag
+    name = (d_ctx.get("name") or s_el.get("name") or d_el.get("name") or "").strip()
+    if name and name.lower() not in ("none", "null", "undefined") and tag:
+        return f"name:{tag}[name='{name}']"
+
+    # 3. Stable CSS selector / path
+    css_path = (d_ctx.get("css_path") or s_el.get("css_path") or d_el.get("css_path") or "").strip()
+    if css_path and css_path.lower() not in ("none", "null", "undefined"):
+        return f"css:{css_path}"
+
+    # 4. Tag + structural context (e.g. type, placeholder, aria-label, href, visible text)
+    type_attr = (d_ctx.get("type") or s_el.get("type") or d_el.get("type") or "").strip().lower()
+    placeholder = (d_ctx.get("placeholder") or s_el.get("placeholder") or "").strip()
+    aria_label = (d_ctx.get("aria_label") or s_el.get("aria-label") or s_el.get("aria_label") or "").strip()
+    href = (d_ctx.get("href") or s_el.get("href") or "").strip()
+    raw_text = (d_ctx.get("text") or s_el.get("text") or "").strip()
+    norm_text = normalize_text(raw_text)[:40]
+
+    parts = [f"tag:{tag}"]
+    if type_attr:
+        parts.append(f"type:{type_attr}")
+    if placeholder:
+        parts.append(f"ph:{placeholder}")
+    if aria_label:
+        parts.append(f"label:{aria_label}")
+    if href and tag == "a":
+        parts.append(f"href:{normalize_href(href)}")
+    if norm_text:
+        parts.append(f"text:{norm_text}")
+
+    if len(parts) > 1:
+        return "|".join(parts)
+
+    # 5. Deterministic fallback
+    role = (d_ctx.get("role") or s_el.get("role") or "").strip().lower()
+    cls_attr = (d_ctx.get("class") or s_el.get("class") or "").strip()
+    norm_cls = ".".join(cls_attr.split()[:2])
+    return f"fallback:{tag}.{norm_cls}[role={role}]"
 
 
 def correlate_single_element(
@@ -318,6 +395,105 @@ def correlate_direction_elements(
     return correlated_list
 
 
+def build_audit_population(all_correlated: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Constructs an explicit, unique audit population from all correlated traversal steps.
+    Deduplicates elements visited across multiple directions (e.g. forward step X and backward step Y)
+    by their stable element identity.
+    
+    Each unique element preserves:
+    - stable_identity: Deterministic identifier string
+    - element_index: 1-indexed unique integer
+    - directions_observed: List[str] e.g. ["forward", "backward"]
+    - traversal_steps: List[Dict] with direction and step numbers
+    - primary_step: Primary step number
+    - primary_direction: Primary direction
+    - selenium: Unified Selenium DOM attributes
+    - nvda: Unified NVDA speech attributes
+    - observations: Complete list of all directional observations with their NVDA speech
+    - dom_correlation: Correlation metadata
+    - dom_context: Contextual landmarks, headings, surrounding text
+    - validation_context: Structured validation and error information
+    """
+    unique_elements: List[Dict[str, Any]] = []
+    identity_map: Dict[str, int] = {}
+
+    for item in all_correlated:
+        direction = item.get("direction", "forward")
+        step_num = item.get("step")
+        sync_el = item.get("synchronized_element") or {}
+        selenium_el = sync_el.get("selenium") or {}
+        nvda_el = sync_el.get("nvda") or {}
+        comp = sync_el.get("comparison") or {}
+        dom_el = item.get("dom_element") or {}
+        dom_ctx = item.get("dom_context") or {}
+        corr_info = item.get("correlation") or {}
+
+        stable_id = compute_stable_element_identity(selenium_el, dom_el, dom_ctx)
+
+        obs_entry = {
+            "direction": direction,
+            "step": step_num,
+            "selenium": copy.deepcopy(selenium_el),
+            "nvda": copy.deepcopy(nvda_el),
+            "comparison": copy.deepcopy(comp),
+        }
+
+        if stable_id in identity_map:
+            idx = identity_map[stable_id]
+            existing = unique_elements[idx]
+            if direction not in existing["directions_observed"]:
+                existing["directions_observed"].append(direction)
+            existing["traversal_steps"].append({
+                "direction": direction,
+                "step": step_num,
+            })
+            existing["observations"].append(obs_entry)
+
+            # If current observation has validation context and existing doesn't, or has error info:
+            curr_val = dom_ctx.get("validation_context")
+            if curr_val and (not existing.get("validation_context") or curr_val.get("has_error")):
+                existing["validation_context"] = copy.deepcopy(curr_val)
+
+            # Enrich DOM context if previously missing
+            if not existing.get("dom_context") and dom_ctx:
+                existing["dom_context"] = copy.deepcopy(dom_ctx)
+                existing["dom_element"] = copy.deepcopy(dom_el)
+                existing["dom_correlation"] = copy.deepcopy(corr_info)
+        else:
+            elem_idx = len(unique_elements) + 1
+            new_item = {
+                "element_index": elem_idx,
+                "stable_identity": stable_id,
+                "tag": selenium_el.get("tag") or dom_ctx.get("tag"),
+                "id": selenium_el.get("id") or dom_ctx.get("id"),
+                "name": selenium_el.get("name") or dom_ctx.get("name"),
+                "type": selenium_el.get("type") or dom_ctx.get("type"),
+                "directions_observed": [direction],
+                "traversal_steps": [{
+                    "direction": direction,
+                    "step": step_num,
+                }],
+                "primary_step": step_num,
+                "primary_direction": direction,
+                "selenium": copy.deepcopy(selenium_el),
+                "nvda": copy.deepcopy(nvda_el),
+                "comparison": copy.deepcopy(comp),
+                "observations": [obs_entry],
+                "dom_correlation": copy.deepcopy(corr_info),
+                "dom_element": copy.deepcopy(dom_el),
+                "dom_context": copy.deepcopy(dom_ctx),
+                "validation_context": copy.deepcopy(dom_ctx.get("validation_context")),
+            }
+            identity_map[stable_id] = len(unique_elements)
+            unique_elements.append(new_item)
+
+    return {
+        "unique_element_count": len(unique_elements),
+        "elements": unique_elements,
+    }
+
+
 def assemble_unified_evidence_package(
     url: str,
     synchronized_output: Dict[str, Any],
@@ -330,6 +506,7 @@ def assemble_unified_evidence_package(
     - Semantic DOM structural snapshot (landmarks, headings, sections, interactive controls)
     - Webpage screenshot visual evidence (path, dimensions, format, fixed elements flag)
     - Explicit element-level correlation results and structural context
+    - Deduplicated, stable audit population representing all unique traversed controls
 
     Evidence-only transformation. Does NOT produce WCAG violation judgments.
     """
@@ -338,10 +515,22 @@ def assemble_unified_evidence_package(
     forward_steps = synchronized_output.get("forward", []) if isinstance(synchronized_output, dict) else []
     backward_steps = synchronized_output.get("backward", []) if isinstance(synchronized_output, dict) else []
 
+    init_data = copy.deepcopy(synchronized_output.get("initialization"))
+    init_events = (init_data or {}).get("events", []) if isinstance(init_data, dict) else []
+
     # Correlate forward and backward directions independently
     correlated_forward = correlate_direction_elements(forward_steps, "forward", dom_elements)
     correlated_backward = correlate_direction_elements(backward_steps, "backward", dom_elements)
     all_correlated = correlated_forward + correlated_backward
+
+    # If an interactive element was focused on initial page load, correlate it as well
+    init_focused = init_data.get("initial_focused_element") if isinstance(init_data, dict) else None
+    if init_focused and isinstance(init_focused, dict) and init_focused.get("tag"):
+        init_correlate = correlate_direction_elements([{"step": 0, "selenium": init_focused, "nvda": None, "comparison": {}}], "initial", dom_elements)
+        all_correlated = init_correlate + all_correlated
+
+    # Build unique audit population deduplicated by stable identity
+    audit_pop = build_audit_population(all_correlated)
 
     # Tally correlation statistics
     matched_count = sum(1 for c in all_correlated if c["correlation"]["status"] == "MATCHED")
@@ -358,11 +547,21 @@ def assemble_unified_evidence_package(
         visual_evidence["status"] = screenshot_metadata.get("status", "UNAVAILABLE")
         visual_evidence["screenshot"] = copy.deepcopy(screenshot_metadata)
 
+    init_data = copy.deepcopy(synchronized_output.get("initialization"))
+    init_events = (init_data or {}).get("events", []) if isinstance(init_data, dict) else []
+
     unified_package = {
         "schema_version": "1.0",
         "url": url or synchronized_output.get("url", ""),
         "synchronized_evidence": {
-            "initialization": copy.deepcopy(synchronized_output.get("initialization")),
+            "audit_population": audit_pop,
+            "traversal_elements": {
+                "forward": copy.deepcopy(forward_steps),
+                "backward": copy.deepcopy(backward_steps),
+                "total_traversal_steps": total_count,
+            },
+            "initialization": init_data,
+            "initialization_events": copy.deepcopy(init_events),
             "forward": copy.deepcopy(forward_steps),
             "backward": copy.deepcopy(backward_steps),
         },
@@ -371,6 +570,7 @@ def assemble_unified_evidence_package(
         "correlated_elements": all_correlated,
         "correlation_summary": {
             "total_synchronized_elements": total_count,
+            "unique_element_count": audit_pop["unique_element_count"],
             "forward_steps_count": len(forward_steps),
             "backward_steps_count": len(backward_steps),
             "matched_count": matched_count,
@@ -381,6 +581,7 @@ def assemble_unified_evidence_package(
     }
 
     logger.info(
-        f"Unified evidence package assembled for {url}: {matched_count}/{total_count} matched ({match_rate}%)."
+        f"Unified evidence package assembled for {url}: {matched_count}/{total_count} matched ({match_rate}%), "
+        f"{audit_pop['unique_element_count']} unique audit population elements."
     )
     return unified_package

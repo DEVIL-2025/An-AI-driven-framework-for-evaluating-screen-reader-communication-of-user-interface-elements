@@ -141,7 +141,7 @@ python main.py --live
 ```
 
 #### 3. Run Automated Unit Test Suite
-Runs the 70 offline unit tests across parser, AI agent, backend API, and database models:
+Runs the comprehensive offline unit test suite (165 tests) across all modules:
 ```powershell
 python main.py --test
 ```
@@ -153,7 +153,7 @@ python main.py --test
 Each component in the repository is modular and can be executed or tested individually:
 
 #### 1. Standalone Synchronized DOM + NVDA Traversal (`synchronisation/sync.py`)
-Runs bidirectional keyboard traversal (Tab & Shift+Tab) while capturing NVDA screen reader speech adaptively and comparing accessibility roles against Selenium DOM attributes.
+Runs bidirectional keyboard traversal (Tab & Shift+Tab) with pre-traversal speech draining and causal action-response synchronization while capturing NVDA screen reader speech adaptively and comparing accessibility roles against Selenium DOM attributes.
 
 ```powershell
 # Syntax: python synchronisation/sync.py <URL>
@@ -166,7 +166,7 @@ python synchronisation/sync.py https://example.com
   $env:READ_DELAY="1.5"     # Max wait per element (default: 1.5s adaptive)
   python synchronisation/sync.py https://example.com
   ```
-* **Output Artifact:** Saves `synchronized_output.json` with DOM and NVDA matched telemetry.
+* **Output Artifact:** Saves `synchronized_output.json` with DOM and NVDA matched telemetry and isolated initialization metadata.
 
 ---
 
@@ -222,25 +222,34 @@ npm run preview
 Each test suite can be run independently:
 
 ```powershell
-# 1. Full-Page Screenshot Capture Tests (11 tests - CDP, viewport fallback, tall pages)
+# 1. NVDA Traversal Synchronization & Lifecycle Tests (13 tests - speech draining, causal boundaries)
+python -m unittest tests/test_nvda_synchronization.py -v
+
+# 2. Evidence Correlator Tests (14 tests - multi-signal scoring, ambiguity resolution, unified package)
+python -m unittest tests/test_evidence_correlator.py -v
+
+# 3. Full-Page Screenshot Capture Tests (11 tests - CDP, viewport fallback, tall pages)
 python -m unittest tests/test_screenshot_capture.py -v
 
-# 2. DOM / Structural Snapshot Extractor Tests (26 tests - generic landmarks, headings, cards)
+# 4. DOM / Structural Snapshot Extractor Tests (26 tests - generic landmarks, headings, cards)
 python -m unittest tests/test_dom_extractor.py -v
 
-# 3. NVDA Speech Parser Tests (29 tests - speech cleaning, role tokenization, landmarks)
+# 5. NVDA Speech Parser Tests (29 tests - speech cleaning, role tokenization, landmarks)
 python -m unittest tests/test_parser.py -v
 
-# 4. AI Accessibility Agent Tests (15 tests - Gemini schemas, batching, confidence scoring)
+# 6. AI Accessibility Agent Tests (32 tests - Gemini schemas, batching, normative adjudication)
 python -m unittest tests/test_ai_agent.py -v
 
-# 5. Backend REST API Tests (13 tests - route validation, worker queue, error handling)
+# 7. Backend REST API Tests (13 tests - route validation, worker queue, error handling)
 python -m unittest tests/test_backend.py -v
 
-# 6. PostgreSQL Database Integration Tests (13 tests - UUID, JSONB persistence, CRUD)
+# 8. PostgreSQL Database Integration Tests (13 tests - UUID, JSONB persistence, CRUD)
 python -m unittest tests/test_database.py -v
 
-# Run entire test suite (all 107 tests):
+# 9. Multimodal & Target Validation Tests (14 tests - IRCTC, image context, Gemini multimodal)
+python -m unittest tests/test_gemini_multimodal.py tests/test_validation_irctc.py -v
+
+# Run entire test suite (all 165 tests):
 python -m unittest discover -s tests -v
 ```
 
@@ -509,19 +518,24 @@ NVDA_TEXT_EXTRACTOR - Copy/
 │   ├── ai_agent.py                   <-- Gemini AI Analyzer & Pydantic report schemas
 │   ├── ai_providers.py               <-- Gemini REST API provider & mock fallback
 │   ├── dom_extractor.py              <-- Semantic DOM & structural snapshot extractor
+│   ├── evidence_correlator.py        <-- Multi-signal dynamic Selenium to static DOM correlator
 │   ├── nvda_classifier.py            <-- Filters browser chrome & deduplicates elements
 │   ├── nvda_filter.py                <-- Cleans speech timestamps & formatting
 │   ├── nvda_parser.py                <-- Converts speech into structured AccessibilityEvents
-│   ├── nvda_tool.py                  <-- Windows Win32 API bridge to NVDA Speech Viewer
+│   ├── nvda_tool.py                  <-- Win32 API bridge with pre-traversal draining & causal sync
 │   └── screenshot_capture.py         <-- Chrome DevTools Protocol full-page screenshot capture
 │
-├── tests/                            <-- Automated Unit & Integration Tests (107 tests)
+├── tests/                            <-- Automated Unit & Integration Tests (165 tests)
+│   ├── test_nvda_synchronization.py  <-- NVDA lifecycle & speech draining tests (13 tests)
+│   ├── test_evidence_correlator.py   <-- Correlation engine & unified package tests (14 tests)
 │   ├── test_screenshot_capture.py    <-- Full-page & viewport screenshot tests (11 tests)
 │   ├── test_dom_extractor.py         <-- DOM structural snapshot extractor tests (26 tests)
 │   ├── test_parser.py                <-- NVDA speech parsing tests (29 tests)
-│   ├── test_ai_agent.py              <-- AI analyzer evidence & batching tests (15 tests)
+│   ├── test_ai_agent.py              <-- AI analyzer normative adjudication tests (32 tests)
 │   ├── test_backend.py               <-- FastAPI routes & mock runner tests (13 tests)
-│   └── test_database.py              <-- PostgreSQL CRUD & schema tests (13 tests)
+│   ├── test_database.py              <-- PostgreSQL CRUD & schema tests (13 tests)
+│   ├── test_gemini_multimodal.py     <-- Gemini multimodal integration tests (8 tests)
+│   └── test_validation_irctc.py      <-- Contextual heading & image validation tests (6 tests)
 │
 ├── synchronisation/                  <-- Synchronization Engine
 │   └── sync.py                       <-- DOM element vs. NVDA readout alignment

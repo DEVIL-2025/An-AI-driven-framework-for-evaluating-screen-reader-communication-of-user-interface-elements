@@ -117,27 +117,51 @@ Build a **local web-based accessibility testing application** where a user can e
 - "View Audit" action calls `GET /api/audits/{audit_id}` to load any historical audit into the main dashboard and violation viewer
 - Easy navigation back to the live audit dashboard via "Back to Dashboard"
 
+## 17. Unified Multimodal Evidence Package & Correlation (Phase 3A) — DONE
+- `tools/evidence_correlator.py`: Multi-signal correlation engine matching dynamic Selenium elements against static DOM snapshot elements using weighted signals (id, name, type, normalized text, href, ARIA roles, class overlap, CSS path).
+- Produces `unified_evidence_package.json` correlating DOM structure, visual screenshot metadata, and NVDA traversal telemetry.
+- Preserves context (parent sections, landmarks, nearest headings, surrounding text) without pre-judging accessibility compliance.
+
+## 18. Generic WCAG Reasoning Engine & Normative Adjudication — DONE
+- Clear architectural separation between **Normative WCAG Violations** and **Accessibility Recommendations** (best practices, structural enhancements).
+- Multi-gate adjudication engine evaluating:
+  - **WCAG 2.4.4 (Link Purpose in Context)**: Accounts for enclosing container headings/context (Technique H80/G91). Does not promote generic link text into a violation if programmatic context is present.
+  - **WCAG 1.1.1 (Image Semantics)**: Distinguishes between informative branding logos (genuine Level A violations when missing alt text) vs. decorative icons/badges (advisory recommendations, Technique H67) vs. child graphics in accessible parent controls.
+  - **WCAG 2.4.1 (Bypass Blocks) & 1.3.1 (Headings)**: Missing `<main>` or `<h1>` are never automatically treated as normative failures unless true programmatic accessibility barriers exist.
+- Deterministic deduction scoring model: `CRITICAL: -15.0`, `MAJOR: -8.0`, `MINOR: -3.0`, `INFO: 0.0`, with Recommendations carrying `0.0` penalty.
+- Strict Pydantic model validation (`AINormativeBasis`) ensuring numeric SC identification, conformance levels, and evidence bases.
+
+## 19. NVDA Traversal Synchronization & Pre-Traversal Speech Draining — DONE
+- Resolved root-cause element desynchronization caused by Chrome page-load virtual buffer reading and "Automatic Say All on Page Load".
+- Implemented 8-state explicit lifecycle model:
+  `INITIALIZING` ➔ `PAGE_LOADING` ➔ `PAGE_LOAD_SPEECH` ➔ `NVDA_CAPTURE_READY` ➔ `BASELINE_ESTABLISHED` ➔ `TRAVERSAL_READY` ➔ `TRAVERSING` ➔ `TRAVERSAL_COMPLETE`.
+- `NVDATextExtractor.drain_initial_speech()`: Adaptively monitors page-load speech until buffer stabilization, captures all accumulated text into an `initialization` metadata block (`phase: "PAGE_INITIALIZATION"`), and marks an authoritative baseline boundary.
+- `NVDATextExtractor.capture_action_response(action_fn)`: Causal action-response synchronization taking a pre-action buffer mark before keystroke execution and capturing only fresh speech strictly succeeding that mark.
+- Removed `body.click()` which previously activated the browse-mode buffer at arbitrary mouse coordinates.
+- Fully covered by 13 automated synchronization lifecycle scenarios (`tests/test_nvda_synchronization.py`).
+- **Comprehensive test suite**: 165 automated tests across all modules passing at 100%.
+
 ---
 
 # Remaining Tasks (TODO)
 
-## 17. Security & Reliability — NEXT
+## 20. Security & Reliability — NEXT
 - Rate limiting / request throttling on `POST /api/audits`
 - Strict timeout handling for unresponsive target websites or frozen browser instances
 - Graceful worker thread shutdown on server termination
 - Frontend React error boundary to capture unexpected render issues
 - Ensure `.env` and sensitive credentials remain secure
 
-## 18. PDF / HTML Report Export — TODO
+## 21. PDF / HTML Report Export — TODO
 - Downloadable standalone accessibility report (HTML / PDF format)
 - Export audit findings and ground-truth NVDA evidence for developer QA teams
 
-## 19. Final End-to-End System Verification — TODO
+## 22. Final End-to-End System Verification — TODO
 - End-to-end multi-site verification across diverse web structures (e-commerce, university portals, forms, SPAs)
 - Complete pipeline verification:
   `URL Input → Browser Navigation → NVDA Capture → Synchronization → Gemini Analysis → PostgreSQL Persistence → React Dashboard → History`
 
-## 20. Automatic NVDA Startup — LATER (Deferred)
+## 23. Automatic NVDA Startup — LATER (Deferred)
 - Optional Windows service or child process launcher to start NVDA and open Speech Viewer automatically if not already running.
 
 ---
@@ -151,10 +175,13 @@ Build a **local web-based accessibility testing application** where a user can e
 5. React + Vite + Tailwind Dashboard — **DONE**
 6. Frontend ↔ Backend Integration — **DONE**
 7. Audit History Interface — **DONE**
-8. Security & Reliability Hardening — **NEXT**
-9. PDF / HTML Report Export — **TODO**
-10. Final End-to-End Verification — **TODO**
-11. Automatic NVDA Startup — **LATER**
+8. Unified Multimodal Evidence Correlation (Phase 3A) — **DONE**
+9. Generic WCAG Reasoning Engine & Normative Adjudication — **DONE**
+10. NVDA Traversal Synchronization & Pre-Traversal Speech Draining — **DONE**
+11. Security & Reliability Hardening — **NEXT**
+12. PDF / HTML Report Export — **TODO**
+13. Final End-to-End Verification — **TODO**
+14. Automatic NVDA Startup — **LATER**
 
 ---
 

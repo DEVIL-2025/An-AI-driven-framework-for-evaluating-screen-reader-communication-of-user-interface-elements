@@ -24,8 +24,9 @@ DEFAULT_URL = os.environ.get("TARGET_URL", "")
 URL = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_URL
 
 TAB_LIMIT = int(os.environ.get("TAB_LIMIT", 100))
-READ_DELAY = float(os.environ.get("READ_DELAY", 2.0))
+READ_DELAY = float(os.environ.get("READ_DELAY", 1.0))
 POLL_DELAY = float(os.environ.get("POLL_DELAY", 0.2))
+TRAVERSAL_DELAY = float(os.environ.get("TRAVERSAL_DELAY", 1.0))
 
 # Mapping standard HTML tags/types to expected accessibility roles
 TAG_TO_EXPECTED_ROLES = {
@@ -268,12 +269,14 @@ if __name__ == "__main__":
 
     try:
         driver.maximize_window()
+        # Mark baseline before navigation so historical Windows OS/desktop speech is excluded
+        extractor.mark_baseline()
         print("\n[BROWSER] Navigating to target URL...")
         driver.get(URL)
 
         # Allow page-load speech to settle and establish clean baseline
         print("[NVDA] Page loading. Draining page initialization speech...")
-        initial_speech, is_settled = extractor.drain_initial_speech()
+        initial_speech, is_settled = extractor.drain_initial_speech(from_baseline=True)
         print(f"[NVDA] Baseline established. Initial speech length: {len(initial_speech)} chars (settled={is_settled}).")
 
         initial_events = []
@@ -347,6 +350,7 @@ if __name__ == "__main__":
             else:
                 print(f"NVDA  : (No NVDA event found - {capture_status})")
             print(f"Status: {result['comparison']['status']}")
+            time.sleep(TRAVERSAL_DELAY)
 
         # BACKWARD TRAVERSAL
         visited_backward = set()
@@ -404,6 +408,7 @@ if __name__ == "__main__":
             else:
                 print(f"NVDA  : (No NVDA event found - {capture_status})")
             print(f"Status: {result['comparison']['status']}")
+            time.sleep(TRAVERSAL_DELAY)
 
     finally:
         print("\nTraversal finished. Closing browser...")

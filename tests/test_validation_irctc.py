@@ -34,8 +34,24 @@ class TestIRCTCValidationCase(unittest.TestCase):
                 self.sync_data = data.get("synchronized_evidence", {})
                 self.dom_snapshot = data.get("dom_snapshot", {})
         else:
-            self.sync_data = {"forward": [], "backward": []}
-            self.dom_snapshot = {}
+            self.sync_data = {
+                "forward": [
+                    {
+                        "step": i,
+                        "selenium": {"tag": "input", "id": f"field_{i}", "type": "text"},
+                        "nvda": {"role": "edit", "name": f"Field {i}"},
+                        "comparison": {"status": "MATCH"},
+                    }
+                    for i in range(1, 6)
+                ],
+                "backward": [],
+            }
+            self.dom_snapshot = {
+                "headings": [{"level": 2, "text": "Registration"}],
+                "landmarks": [{"role": "banner"}, {"role": "navigation"}],
+                "interactive_elements": [],
+                "images": [],
+            }
 
     def test_irctc_advisory_findings_routed_to_recommendations(self):
         """

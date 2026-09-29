@@ -1241,6 +1241,82 @@ class TestAIAccessibilityAgent(unittest.TestCase):
         self.assertEqual(report.summary.compliance_score, 100.0)
 
     # -------------------------------------------------------------------------
+    # TEST 26b: Unlabelled image link without author name is retained as violation
+    # -------------------------------------------------------------------------
+    def test_26b_unlabelled_image_in_interactive_element_retained_as_violation(self):
+        class UnlabelledLinkMockProvider(MockLLMProvider):
+            def generate_analysis(self, system_prompt, user_prompt, image_data=None):
+                return type("Resp", (), {
+                    "success": True,
+                    "error": None,
+                    "structured_data": {
+                        "analysis_status": "COMPLETED",
+                        "summary": {
+                            "total_elements_analyzed": 1,
+                            "total_violations": 1,
+                            "total_recommendations": 0,
+                            "compliance_score": 85.0,
+                            "severity_summary": {"CRITICAL": 0, "MAJOR": 1, "MINOR": 0, "INFO": 0},
+                        },
+                        "violations": [
+                            {
+                                "violation_id": "AI-001",
+                                "scope": "ELEMENT",
+                                "element_reference": {"step": 1, "direction": "forward"},
+                                "rule_id": "WCAG 2.4.4",
+                                "rule_name": "Link Purpose (In Context)",
+                                "severity": "MAJOR",
+                                "confidence": 0.95,
+                                "title": "Unlabelled Icon Link Lacks Accessible Name",
+                                "description": "Interactive anchor containing only an unlabelled image has no accessible name.",
+                                "ai_rationale": "Link element has no text or aria-label, and child image lacks alt text.",
+                                "user_impact": "Screen reader users cannot determine the link purpose.",
+                                "wcag_context": "WCAG 2.4.4 Link Purpose (Level A) and WCAG 4.1.2 (Level A)",
+                                "recommendation": "Provide an aria-label or alt text describing the destination.",
+                                "developer_guidance": "<a href='...' aria-label='Home'><img src='...' alt='' /></a>",
+                            }
+                        ],
+                        "recommendations": [],
+                    }
+                })()
+
+        sync_data = {
+            "url": "https://anywebsite.com",
+            "forward": [
+                {
+                    "step": 1,
+                    "selenium": {
+                        "tag": "a",
+                        "href": "https://anywebsite.com/home",
+                        "aria_label": None,
+                        "text": "",
+                        "title": "",
+                    },
+                    "nvda": {
+                        "name": "home_logo.",
+                        "role": "graphic link",
+                        "raw_text": "home_logo. Unlabeled graphic same page link",
+                    },
+                    "comparison": {
+                        "name_match": False,
+                        "role_match": True,
+                        "status": "ROLE_MATCH_NAME_UNLABELLED",
+                    },
+                }
+            ],
+            "backward": [],
+        }
+        analyzer = AIAccessibilityAnalyzer(provider=UnlabelledLinkMockProvider())
+        report = analyzer.analyze_synchronized_evidence(sync_data)
+
+        # Must be retained as a normative violation and NOT downgraded to recommendation
+        self.assertEqual(len(report.violations), 1)
+        self.assertEqual(report.summary.total_violations, 1)
+        self.assertEqual(report.violations[0].rule_id, "WCAG 2.4.4")
+        self.assertEqual(len(report.recommendations), 0)
+        self.assertLess(report.summary.compliance_score, 100.0)
+
+    # -------------------------------------------------------------------------
     # TEST 27: Standalone informative image without alt is retained as violation
     # -------------------------------------------------------------------------
     def test_27_standalone_image_without_alt_retained_as_violation(self):

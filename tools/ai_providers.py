@@ -80,7 +80,7 @@ def load_screenshot_image(
         return None, f"Failed to read screenshot file: {str(e)}"
 
 
-def _load_env_file():
+def _load_env_file(override: bool = False):
     """Lightweight loader for .env file in workspace root if present."""
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     env_file = os.path.join(root_dir, ".env")
@@ -92,7 +92,7 @@ def _load_env_file():
                     if line and not line.startswith("#") and "=" in line:
                         k, v = line.split("=", 1)
                         k, v = k.strip(), v.strip().strip("'\"")
-                        if k and k not in os.environ:
+                        if k and (override or k not in os.environ):
                             os.environ[k] = v
         except Exception:
             pass
@@ -652,11 +652,21 @@ class FallbackLLMProvider(BaseLLMProvider):
         )
 
 
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
+GEMINI_FALLBACK_MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+]
+
+
 class GeminiLLMProvider(BaseLLMProvider):
     """
     Google Gemini LLM provider.
     Reads API key from GEMINI_API_KEY environment variable.
-    Defaults to gemini-2.5-flash (or GEMINI_MODEL if specified).
+    Defaults to gemini-3.1-flash-lite (or GEMINI_MODEL if specified), with automatic
+    fallback to backup models if a model encounters temporary 503/429 high demand.
     """
 
     def __init__(
@@ -665,7 +675,8 @@ class GeminiLLMProvider(BaseLLMProvider):
         model_name: Optional[str] = None,
         timeout: int = 90,
     ):
-        resolved_model = model_name or os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+        _load_env_file(override=True)
+        resolved_model = model_name or os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
         super().__init__(provider_name="GeminiProvider", model_name=resolved_model)
         self.api_key = api_key if api_key is not None else os.environ.get("GEMINI_API_KEY")
         self.timeout = int(os.environ.get("GEMINI_TIMEOUT", timeout))
@@ -677,6 +688,11 @@ class GeminiLLMProvider(BaseLLMProvider):
         violation_data: Optional[Dict[str, Any]] = None,
         image_data: Optional[Dict[str, Any]] = None,
     ) -> LLMResponse:
+        # Re-check key in case .env was refreshed
+        if not self.api_key:
+            _load_env_file(override=True)
+            self.api_key = os.environ.get("GEMINI_API_KEY")
+
         if not self.api_key:
             return LLMResponse(
                 success=False,
@@ -685,82 +701,142 @@ class GeminiLLMProvider(BaseLLMProvider):
                 model_name=self.model_name,
             )
 
-        try:
-            import requests
-            import re
+        import requests
+        import re
+        import time
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
-            headers = {"Content-Type": "application/json"}
+        # Build candidate models: configured model first, followed by fallbacks
+        models_to_try = [self.model_name]
+        for fb in GEMINI_FALLBACK_MODELS:
+            if fb not in models_to_try:
+                models_to_try.append(fb)
 
-            # Build multimodal content parts
-            content_parts = [{"text": user_prompt}]
-            if image_data and isinstance(image_data, dict):
-                content_parts.append(image_data)
+        # Build multimodal content parts
+        content_parts = [{"text": user_prompt}]
+        if image_data and isinstance(image_data, dict):
+            content_parts.append(image_data)
 
-            payload = {
-                "system_instruction": {"parts": [{"text": system_prompt}]},
-                "contents": [{"parts": content_parts}],
-                "generationConfig": {
-                    "response_mime_type": "application/json",
-                    "response_schema": ACCESSIBILITY_ANALYSIS_SCHEMA,
-                    "temperature": 0.1,
-                },
-            }
+        payload = {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"parts": content_parts}],
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "response_schema": ACCESSIBILITY_ANALYSIS_SCHEMA,
+                "temperature": 0.1,
+            },
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key,
+        }
 
-            response = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+        last_error_resp = None
 
-            if response.status_code != 200:
+        for idx, target_model in enumerate(models_to_try):
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={self.api_key}"
+            try:
+                max_attempts = 2
+                for attempt in range(max_attempts):
+                    response = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        candidates = data.get("candidates", [])
+                        if not candidates:
+                            return LLMResponse(
+                                raw_text=response.text,
+                                success=False,
+                                error="Gemini returned no response candidates.",
+                                provider_name=self.provider_name,
+                                model_name=target_model,
+                            )
+
+                        content_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                        if content_text.startswith("```"):
+                            content_text = re.sub(r"^```(?:json)?\s*", "", content_text)
+                            content_text = re.sub(r"\s*```$", "", content_text).strip()
+
+                        parsed_json = json.loads(content_text)
+                        if target_model != self.model_name:
+                            logger.info(f"Fallback to Gemini model '{target_model}' succeeded.")
+                            self.model_name = target_model
+
+                        return LLMResponse(
+                            raw_text=content_text,
+                            structured_data=parsed_json,
+                            success=True,
+                            provider_name=self.provider_name,
+                            model_name=target_model,
+                        )
+
+                    # If temporary high demand (503) or rate limit (429), retry briefly on the same model
+                    if response.status_code in (503, 429) and attempt < max_attempts - 1:
+                        logger.warning(
+                            f"Gemini API returned HTTP {response.status_code} for '{target_model}'. "
+                            f"Retrying in 2 seconds (attempt {attempt + 1}/{max_attempts})..."
+                        )
+                        time.sleep(2)
+                        continue
+
+                    # If temporary high demand, rate limit, server error, or model not found (404), try next fallback model
+                    if response.status_code in (503, 429, 404, 500, 502, 504) and idx < len(models_to_try) - 1:
+                        next_model = models_to_try[idx + 1]
+                        logger.warning(
+                            f"Gemini API returned HTTP {response.status_code} for '{target_model}'. "
+                            f"Automatically attempting fallback model '{next_model}'..."
+                        )
+                        last_error_resp = LLMResponse(
+                            raw_text=response.text,
+                            success=False,
+                            error=f"Gemini API returned HTTP {response.status_code}: {response.text[:200]}",
+                            provider_name=self.provider_name,
+                            model_name=target_model,
+                        )
+                        break
+
+                    return LLMResponse(
+                        raw_text=response.text,
+                        success=False,
+                        error=f"Gemini API returned HTTP {response.status_code}: {response.text[:200]}",
+                        provider_name=self.provider_name,
+                        model_name=target_model,
+                    )
+
+            except json.JSONDecodeError as jde:
                 return LLMResponse(
-                    raw_text=response.text,
+                    raw_text=str(jde),
                     success=False,
-                    error=f"Gemini API returned HTTP {response.status_code}: {response.text[:200]}",
+                    error=f"Model response was not valid JSON: {str(jde)}",
                     provider_name=self.provider_name,
-                    model_name=self.model_name,
+                    model_name=target_model,
+                )
+            except Exception as e:
+                # If network timeout/failure and we have fallback models, attempt next
+                if idx < len(models_to_try) - 1:
+                    next_model = models_to_try[idx + 1]
+                    logger.warning(f"Gemini request failed for '{target_model}': {e}. Attempting fallback '{next_model}'...")
+                    last_error_resp = LLMResponse(
+                        raw_text="",
+                        success=False,
+                        error=f"Gemini request failed: {str(e)}",
+                        provider_name=self.provider_name,
+                        model_name=target_model,
+                    )
+                    continue
+                return LLMResponse(
+                    raw_text="",
+                    success=False,
+                    error=f"Gemini request failed: {str(e)}",
+                    provider_name=self.provider_name,
+                    model_name=target_model,
                 )
 
-            data = response.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                return LLMResponse(
-                    raw_text=response.text,
-                    success=False,
-                    error="Gemini returned no response candidates.",
-                    provider_name=self.provider_name,
-                    model_name=self.model_name,
-                )
-
-            content_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-            # Clean markdown JSON fences if model wraps response
-            if content_text.startswith("```"):
-                content_text = re.sub(r"^```(?:json)?\s*", "", content_text)
-                content_text = re.sub(r"\s*```$", "", content_text).strip()
-
-            parsed_json = json.loads(content_text)
-
-            return LLMResponse(
-                raw_text=content_text,
-                structured_data=parsed_json,
-                success=True,
-                provider_name=self.provider_name,
-                model_name=self.model_name,
-            )
-
-        except json.JSONDecodeError as jde:
-            return LLMResponse(
-                raw_text=str(jde),
-                success=False,
-                error=f"Model response was not valid JSON: {str(jde)}",
-                provider_name=self.provider_name,
-                model_name=self.model_name,
-            )
-        except Exception as e:
-            return LLMResponse(
-                raw_text="",
-                success=False,
-                error=f"Gemini request failed: {str(e)}",
-                provider_name=self.provider_name,
-                model_name=self.model_name,
-            )
+        return last_error_resp or LLMResponse(
+            success=False,
+            error="All Gemini candidate models failed.",
+            provider_name=self.provider_name,
+            model_name=self.model_name,
+        )
 
 
 def get_default_provider(provider_type: Optional[str] = None, **kwargs) -> BaseLLMProvider:
@@ -771,6 +847,7 @@ def get_default_provider(provider_type: Optional[str] = None, **kwargs) -> BaseL
     2. GEMINI_API_KEY present -> GeminiLLMProvider
     3. Fallback -> FallbackLLMProvider
     """
+    _load_env_file(override=True)
     pt = (provider_type or os.environ.get("LLM_PROVIDER", "")).strip().lower()
 
     if pt == "mock":

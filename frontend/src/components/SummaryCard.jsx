@@ -37,29 +37,65 @@ export default function SummaryCard({ title, value, subtitle, icon, statusType }
     return null
   }
 
+  const getStatusDot = () => {
+    if (!statusType) return null
+    const s = String(statusType).toLowerCase()
+    if (s === 'completed') {
+      return (
+        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+      )
+    }
+    if (s === 'running') {
+      return (
+        <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+        </span>
+      )
+    }
+    if (s === 'queued') {
+      return (
+        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" aria-hidden="true" />
+      )
+    }
+    if (s === 'failed') {
+      return (
+        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" aria-hidden="true" />
+      )
+    }
+    return null
+  }
+
+  const s = statusType ? String(statusType).toLowerCase().trim() : ''
+  const valStr = value ? String(value).toLowerCase().trim() : ''
+  const isRedundantStatus = s && (valStr === s || valStr.startsWith(s))
+
   return (
-    <div className="glass-card glass-card-hover rounded-2xl p-5 flex flex-col justify-between">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+    <div className="glass-card glass-card-hover rounded-2xl p-5 flex flex-col justify-between overflow-hidden">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-700 truncate">
           {title}
         </span>
-        <div className="p-2 rounded-xl bg-slate-100 text-slate-700" aria-hidden="true">
+        <div className="p-2 rounded-xl bg-slate-100 text-slate-700 shrink-0" aria-hidden="true">
           {icon}
         </div>
       </div>
 
       <div className="mt-4">
         {statusType ? (
-          <div className="flex items-center gap-3">
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-tight">{value}</span>
-            {getStatusBadge()}
+          <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+            {getStatusDot()}
+            <span className="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-tight truncate">
+              {value}
+            </span>
+            {!isRedundantStatus && getStatusBadge()}
           </div>
         ) : (
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-tight">
+          <div className="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-tight truncate">
             {value}
           </div>
         )}
-        <p className="text-xs text-slate-700 mt-1.5 font-medium leading-relaxed">
+        <p className="text-xs text-slate-700 mt-1.5 font-medium leading-relaxed truncate">
           {subtitle}
         </p>
       </div>

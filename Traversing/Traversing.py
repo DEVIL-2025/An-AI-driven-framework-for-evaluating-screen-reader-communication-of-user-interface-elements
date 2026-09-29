@@ -13,7 +13,7 @@ DEFAULT_URL = os.environ.get("TARGET_URL", "")
 URL = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_URL
 
 TAB_LIMIT = int(os.environ.get("TAB_LIMIT", 100))  # Maximum number of Tab presses
-WAIT_TIME = float(os.environ.get("WAIT_TIME", 2.0))  # Delay after each key press
+WAIT_TIME = float(os.environ.get("WAIT_TIME", 1.0))  # Delay after each key press
 
 
 def get_element_details(element):
@@ -62,7 +62,7 @@ if __name__ == "__main__":
         def reset_page():
             """Reload the page and place focus on the body."""
             driver.get(URL)
-            time.sleep(2)
+            time.sleep(WAIT_TIME)
 
             body = driver.find_element(By.TAG_NAME, "body")
             body.click()

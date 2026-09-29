@@ -340,11 +340,12 @@ function getSurroundingText(el, maxLen) {
         }
     }
 
-    // Check grandparent paragraph, list item, table cell, or compact container
+    // Check grandparent paragraph, list item, table cell, or compact container (including form-groups)
     if (parent.parentElement && !isBroadPageLayoutContainer(parent.parentElement)) {
         var gp = parent.parentElement;
         var gpTag = gp.tagName.toUpperCase();
-        if (gpTag === "LI" || gpTag === "P" || gpTag === "DD" || gpTag === "TD" || gpTag === "TH" || (parent.children.length === 1 && gp.children.length <= 4)) {
+        var isFormContainer = (gp.className && typeof gp.className === "string" && (gp.className.indexOf("form") !== -1 || gp.className.indexOf("field") !== -1 || gp.className.indexOf("group") !== -1));
+        if (gpTag === "LI" || gpTag === "P" || gpTag === "DD" || gpTag === "TD" || gpTag === "TH" || isFormContainer || gp.children.length <= 5) {
             var gpFull = getElementCleanText(gp, maxLen * 2);
             var gpRemainder = (gpFull && selfText && gpFull.indexOf(selfText) !== -1) ? gpFull.replace(selfText, " ").replace(/\\s+/g, " ").trim() : gpFull;
             if (gpRemainder && gpRemainder.replace(/[^a-zA-Z0-9]/g, "").length >= 2) {
@@ -354,6 +355,111 @@ function getSurroundingText(el, maxLen) {
     }
 
     return null;
+}
+
+function getValidationContext(el) {
+    if (!el) return null;
+    var tag = (el.tagName || "").toLowerCase();
+    var role = (el.getAttribute("role") || "").toLowerCase();
+    var isControl = (tag === "input" || tag === "select" || tag === "textarea" || role === "combobox" || role === "textbox" || role === "spinbutton" || role === "slider");
+    if (!isControl) return null;
+
+    var ariaInvalid = el.getAttribute("aria-invalid");
+    var hasAriaInvalid = (ariaInvalid === "true" || ariaInvalid === "grammar" || ariaInvalid === "spelling");
+    var cls = (el.className && typeof el.className === "string") ? el.className.toLowerCase() : "";
+    var hasInvalidClass = (cls.indexOf("invalid") !== -1 || cls.indexOf("error") !== -1 || cls.indexOf("has-error") !== -1);
+    var isRequired = (el.required === true || el.getAttribute("aria-required") === "true");
+
+    var ariaDescribedBy = (el.getAttribute("aria-describedby") || "").trim();
+    var ariaErrorMessage = (el.getAttribute("aria-errormessage") || "").trim();
+
+    var errorNodes = [];
+    var seenNodes = [];
+
+    function addErrorCandidate(node, rel) {
+        if (!node || node === el || seenNodes.indexOf(node) !== -1) return;
+        seenNodes.push(node);
+        var txt = getElementCleanText(node, 150);
+        if (txt && txt.replace(/[^a-zA-Z0-9]/g, "").length >= 2) {
+            errorNodes.push({
+                "selector": getCssPath(node),
+                "text": cleanText(txt, 150),
+                "role": node.getAttribute("role") || null,
+                "id": node.id || null,
+                "aria_live": node.getAttribute("aria-live") || null,
+                "relationship": rel
+            });
+        }
+    }
+
+    // 1. Check aria-describedby references
+    if (ariaDescribedBy) {
+        var dIds = ariaDescribedBy.split(/\\s+/);
+        for (var di = 0; di < dIds.length; di++) {
+            var dn = document.getElementById(dIds[di]);
+            if (dn) addErrorCandidate(dn, "aria-describedby");
+        }
+    }
+
+    // 2. Check aria-errormessage references
+    if (ariaErrorMessage) {
+        var eIds = ariaErrorMessage.split(/\\s+/);
+        for (var ei = 0; ei < eIds.length; ei++) {
+            var en = document.getElementById(eIds[ei]);
+            if (en) addErrorCandidate(en, "aria-errormessage");
+        }
+    }
+
+    // 3. Search surrounding DOM hierarchy for visible error messages
+    var curr = el.parentElement;
+    var depth = 0;
+    while (curr && depth < 3 && curr !== document.body && curr !== document.documentElement && !isBroadPageLayoutContainer(curr)) {
+        var query = "[role='alert'], [aria-live], .error, .invalid, .text-danger, .error-message, .validation-message, .alert-danger, [class*='error'], [class*='invalid'], [id*='error'], [id*='err'], small.text-danger, span.text-danger, div.ui-message";
+        var cands = curr.querySelectorAll(query);
+        for (var ci = 0; ci < cands.length; ci++) {
+            var cand = cands[ci];
+            if (cand !== el && !cand.contains(el)) {
+                var cTag = cand.tagName.toLowerCase();
+                if (cTag !== "input" && cTag !== "button" && cTag !== "select" && cTag !== "form") {
+                    addErrorCandidate(cand, depth === 0 ? "sibling" : (depth === 1 ? "parent_container" : "ancestor_container"));
+                }
+            }
+        }
+        if (errorNodes.length > 0) break;
+        curr = curr.parentElement;
+        depth++;
+    }
+
+    var errorText = errorNodes.map(function(n) { return n.text; }).join("; ");
+    var hasError = hasAriaInvalid || hasInvalidClass || errorNodes.length > 0;
+
+    var assocIds = (ariaDescribedBy + " " + ariaErrorMessage).split(/\\s+/);
+    var isAssociated = false;
+    for (var k = 0; k < errorNodes.length; k++) {
+        if (errorNodes[k].id && assocIds.indexOf(errorNodes[k].id) !== -1) {
+            isAssociated = true;
+            break;
+        }
+        if (errorNodes[k].relationship === "aria-describedby" || errorNodes[k].relationship === "aria-errormessage") {
+            isAssociated = true;
+            break;
+        }
+    }
+
+    return {
+        "has_error": hasError,
+        "aria_invalid": ariaInvalid || null,
+        "is_required": isRequired,
+        "validation_classes": hasInvalidClass ? cls.split(/\\s+/).filter(function(c) { return c.indexOf("invalid") !== -1 || c.indexOf("error") !== -1; }) : [],
+        "error_text": errorText || null,
+        "error_nodes": errorNodes,
+        "programmatic_association": {
+            "aria_describedby": ariaDescribedBy || null,
+            "aria_errormessage": ariaErrorMessage || null,
+            "resolved": Boolean(ariaDescribedBy || ariaErrorMessage),
+            "is_associated": isAssociated
+        }
+    };
 }
 
 // 1. Page Metadata
@@ -645,19 +751,101 @@ for (var m = 0; m < interactiveNodes.length && interactiveElements.length < maxI
     var nearH = getNearestHeading(itEl);
     var surroundingTxt = getSurroundingText(itEl, 100);
 
+    var valContext = getValidationContext(itEl);
+    var placeholder = itEl.getAttribute("placeholder") || null;
+
+    var labelText = null;
+    var labelSelector = null;
+    if (itEl.id) {
+        var lbl = document.querySelector("label[for='" + itEl.id + "']");
+        if (lbl) {
+            labelText = getElementCleanText(lbl, 100);
+            labelSelector = getCssPath(lbl);
+        }
+    }
+    if (!labelText && itEl.labels && itEl.labels.length > 0) {
+        labelText = getElementCleanText(itEl.labels[0], 100);
+        labelSelector = getCssPath(itEl.labels[0]);
+    }
+    if (!labelText) {
+        var pLbl = itEl.closest("label");
+        if (pLbl) {
+            labelText = getElementCleanText(pLbl, 100);
+            labelSelector = getCssPath(pLbl);
+        }
+    }
+
+    var ariaDescribedBy = itEl.getAttribute("aria-describedby");
+    var resolvedDescribedBy = "";
+    if (ariaDescribedBy) {
+        var dIds = ariaDescribedBy.trim().split(/\\s+/);
+        var dParts = [];
+        for (var di = 0; di < dIds.length; di++) {
+            var dNode = document.getElementById(dIds[di]);
+            if (dNode) dParts.push(getElementCleanText(dNode, 100));
+        }
+        if (dParts.length > 0) resolvedDescribedBy = dParts.join(" ");
+    }
+
+    var ariaErrorMessage = itEl.getAttribute("aria-errormessage");
+    var resolvedErrorMessage = "";
+    if (ariaErrorMessage) {
+        var eIds = ariaErrorMessage.trim().split(/\\s+/);
+        var eParts = [];
+        for (var ei = 0; ei < eIds.length; ei++) {
+            var eNode = document.getElementById(eIds[ei]);
+            if (eNode) eParts.push(getElementCleanText(eNode, 100));
+        }
+        if (eParts.length > 0) resolvedErrorMessage = eParts.join(" ");
+    }
+
+    var nearestFormOrGroup = null;
+    var fGroup = itEl.closest("form, fieldset, [role='group'], [role='form'], .form-group, .form-field");
+    if (fGroup) {
+        nearestFormOrGroup = {
+            "tag": fGroup.tagName.toLowerCase(),
+            "id": fGroup.id || null,
+            "role": fGroup.getAttribute("role") || null,
+            "class": (fGroup.className && typeof fGroup.className === "string") ? cleanText(fGroup.className, 80) : null
+        };
+    }
+
+    var nativeValidity = null;
+    if (itEl.validity) {
+        nativeValidity = {
+            "valid": itEl.validity.valid,
+            "valueMissing": itEl.validity.valueMissing,
+            "typeMismatch": itEl.validity.typeMismatch,
+            "patternMismatch": itEl.validity.patternMismatch,
+            "customError": itEl.validity.customError
+        };
+    }
+
     interactiveElements.push({
         "tag": itTag,
         "id": itEl.id || "",
         "name": itEl.getAttribute("name") || "",
         "type": itType,
         "text": visibleText,
+        "placeholder": placeholder,
+        "label_text": labelText,
+        "associated_label_selector": labelSelector,
         "href": itEl.getAttribute("href") ? cleanText(itEl.getAttribute("href"), 120) : null,
         "role": itRole,
         "tabindex": tabIndex !== null ? parseInt(tabIndex, 10) : null,
         "aria_label": ariaLabel,
         "aria_labelledby": ariaLabelledBy,
         "aria_labelledby_text": resolvedLabelledBy || null,
-        "aria_describedby": itEl.getAttribute("aria-describedby"),
+        "aria_describedby": ariaDescribedBy,
+        "aria_describedby_text": resolvedDescribedBy || null,
+        "aria_errormessage": ariaErrorMessage,
+        "aria_errormessage_text": resolvedErrorMessage || null,
+        "aria_invalid": itEl.getAttribute("aria-invalid"),
+        "required": (itEl.required === true || itEl.getAttribute("aria-required") === "true"),
+        "class": (itEl.className && typeof itEl.className === "string") ? itEl.className.trim() : null,
+        "native_validity": nativeValidity,
+        "nearest_form_or_group": nearestFormOrGroup,
+        "validation_context": valContext,
         "aria_expanded": itEl.getAttribute("aria-expanded"),
         "aria_hidden": itEl.getAttribute("aria-hidden") === "true",
         "parent_section_id": parentBlockId,
