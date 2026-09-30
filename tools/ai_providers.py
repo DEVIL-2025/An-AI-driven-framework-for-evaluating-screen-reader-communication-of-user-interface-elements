@@ -238,9 +238,8 @@ ACCESSIBILITY_ANALYSIS_SCHEMA = {
                                 "type": "ARRAY",
                                 "items": {
                                     "type": "STRING",
-                                    "enum": ["DOM", "NVDA", "VISUAL", "INTERACTION"],
                                 },
-                                "description": "Evidence modalities actually evaluated: DOM, NVDA, VISUAL, INTERACTION",
+                                "description": "Structured supporting evidence citations: DIRECT [MODALITY]: concrete evidence, CORROBORATED [MODALITY+MODALITY]: concrete evidence, or INSUFFICIENT_EVIDENCE: explanation",
                             },
                         },
                         "required": [
@@ -250,6 +249,13 @@ ACCESSIBILITY_ANALYSIS_SCHEMA = {
                             "failure_condition",
                             "evidence_basis",
                         ],
+                    },
+                    "evidence_basis": {
+                        "type": "ARRAY",
+                        "items": {
+                            "type": "STRING",
+                        },
+                        "description": "Structured supporting evidence citations: DIRECT [MODALITY]: concrete evidence, CORROBORATED [MODALITY+MODALITY]: concrete evidence, or INSUFFICIENT_EVIDENCE: explanation",
                     },
                     "user_impact": {"type": "STRING"},
                     "wcag_context": {"type": "STRING"},
@@ -454,6 +460,15 @@ class MockLLMProvider(BaseLLMProvider):
                         "title": "Unlabelled Interactive Link",
                         "description": "The interactive link contains no accessible name or text alternative.",
                         "ai_rationale": "DOM <a> element has empty text and no aria-label, confirmed by NVDA announcing 'graphic link' with empty name.",
+                        "normative_basis": {
+                            "success_criterion": "4.1.2",
+                            "level": "A",
+                            "requirement": "For all user interface components, the name and role can be programmatically determined.",
+                            "failure_condition": "Link has empty accessible name and role is not announced with label.",
+                            "evidence_basis": [
+                                "CORROBORATED [DOM+NVDA]: DOM <a> element has empty text/no aria-label and NVDA announces 'graphic link' with empty name"
+                            ],
+                        },
                         "user_impact": "Screen reader users cannot identify the target or purpose of this interactive link.",
                         "wcag_context": "WCAG 2.1 Success Criterion 4.1.2 Name, Role, Value (Level A).",
                         "recommendation": "Provide an explicit, descriptive accessible name using aria-label or inner text.",
@@ -498,6 +513,15 @@ class MockLLMProvider(BaseLLMProvider):
                         "title": "Unlabelled Interactive Link",
                         "description": "The interactive link lacks an accessible name in DOM and NVDA.",
                         "ai_rationale": "Interactive anchor has no accessible text or aria-label; NVDA announced an unlabelled graphic link.",
+                        "normative_basis": {
+                            "success_criterion": "4.1.2",
+                            "level": "A",
+                            "requirement": "For all user interface components, the name and role can be programmatically determined.",
+                            "failure_condition": "Interactive element has no discernible accessible name",
+                            "evidence_basis": [
+                                "CORROBORATED [DOM+NVDA]: Interactive anchor tag has no text or aria-label in DOM, and NVDA announced an unlabelled graphic link"
+                            ],
+                        },
                         "user_impact": "Blind users cannot determine the link target.",
                         "wcag_context": "WCAG 4.1.2 Name, Role, Value (Level A).",
                         "recommendation": "Add a descriptive accessible name via aria-label.",
@@ -514,6 +538,15 @@ class MockLLMProvider(BaseLLMProvider):
                         "title": "Ambiguous Link Text ('Click here')",
                         "description": "Link text 'Click here' is non-descriptive out of context.",
                         "ai_rationale": "Link text 'Click here' provides zero contextual indication of destination when read by screen reader.",
+                        "normative_basis": {
+                            "success_criterion": "2.4.4",
+                            "level": "A",
+                            "requirement": "The purpose of each link can be determined from the link text alone or from the link text together with its programmatically determined link context.",
+                            "failure_condition": "Link text provides no indication of destination out of context without distinguishing heading/section context",
+                            "evidence_basis": [
+                                "DIRECT [DOM]: Link text 'Click here' in DOM lacks descriptive target or contextual heading association"
+                            ],
+                        },
                         "user_impact": "Screen reader users navigating links list will encounter uninformative purpose.",
                         "wcag_context": "WCAG 2.4.4 Link Purpose (In Context) (Level A).",
                         "recommendation": "Replace generic link text with a descriptive target description.",

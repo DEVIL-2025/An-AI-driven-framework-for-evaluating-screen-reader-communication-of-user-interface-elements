@@ -19,10 +19,10 @@ WAIT_TIME = float(os.environ.get("WAIT_TIME", 1.0))  # Delay after each key pres
 def get_element_details(element):
     """Return useful accessibility information about the currently focused element."""
     return {
-        "tag": element.tag_name.lower(),
+        "tag": (element.tag_name or "").lower(),
         "id": element.get_attribute("id") or "",
         "name": element.get_attribute("name") or "",
-        "text": element.text.strip(),
+        "text": (element.text or "").strip(),
         "role": element.get_attribute("role"),
         "type": element.get_attribute("type"),
         "tabindex": element.get_attribute("tabindex"),
@@ -34,6 +34,30 @@ def get_element_details(element):
         "href": element.get_attribute("href"),
         "class": element.get_attribute("class") or "",
     }
+
+
+def get_traversal_element_identifier(element):
+    """
+    Construct a collision-free identifier for DOM elements during keyboard traversal.
+    Uses Selenium W3C element node ID as primary unique key, supplemented with
+    DOM attributes (tag, id, name, type, placeholder, aria-label, href, class, text, value).
+    """
+    try:
+        elem_id = getattr(element, "id", None) or ""
+        tag = (element.tag_name or "").lower()
+        dom_id = element.get_attribute("id") or ""
+        name = element.get_attribute("name") or ""
+        input_type = (element.get_attribute("type") or "").lower() if tag == "input" else ""
+        placeholder = element.get_attribute("placeholder") or ""
+        aria_label = element.get_attribute("aria-label") or ""
+        title = element.get_attribute("title") or ""
+        href = element.get_attribute("href") or ""
+        cls = element.get_attribute("class") or ""
+        text = (element.text or "").strip()
+        val = element.get_attribute("value") or ""
+        return (elem_id, tag, dom_id, name, input_type, placeholder, aria_label, title, href, cls, text, val)
+    except Exception:
+        return None
 
 
 def print_element(index, details):
@@ -76,30 +100,58 @@ if __name__ == "__main__":
         print("=" * 60)
 
         visited = set()
+        first_focused_forward = None
+        prev_forward_id = None
+        forward_stagnant_count = 0
+        actions = ActionChains(driver)
 
         for i in range(TAB_LIMIT):
-            body.send_keys(Keys.TAB)
+            actions.send_keys(Keys.TAB).perform()
             time.sleep(WAIT_TIME)
 
-            active = driver.switch_to.active_element
-            identifier = (
-                active.tag_name,
-                active.get_attribute("id"),
-                active.get_attribute("name"),
-                active.get_attribute("href"),
-                active.get_attribute("class"),
-                active.text.strip(),
-            )
+            try:
+                active = driver.switch_to.active_element
+            except Exception:
+                continue
 
-            if identifier in visited:
-                print("\nReached an already focused element.")
+            elem_id = getattr(active, "id", None)
+            identifier = get_traversal_element_identifier(active)
+            if not identifier:
+                continue
+
+            tag = (active.tag_name or "").lower()
+            if tag in ("body", "html"):
+                prev_forward_id = elem_id
+                forward_stagnant_count = 0
+                continue
+
+            # Stagnation detection (focus stayed on the exact same element)
+            if elem_id and elem_id == prev_forward_id:
+                forward_stagnant_count += 1
+                if forward_stagnant_count == 1:
+                    try:
+                        actions.send_keys(Keys.ESCAPE).perform()
+                        time.sleep(0.3)
+                    except Exception:
+                        pass
+                elif forward_stagnant_count >= 3:
+                    print(f"\nFocus trapped on element <{tag}> for {forward_stagnant_count} consecutive steps. Forward traversal completed.")
+                    break
+            else:
+                forward_stagnant_count = 0
+
+            prev_forward_id = elem_id
+
+            # Loop detection: only if focus returns to the first focused element after visiting >= 5 distinct elements
+            if first_focused_forward and elem_id == first_focused_forward and len(visited) >= 5:
+                print("\nReached wrap-around back to initial element.")
                 print("Forward traversal completed.")
                 break
 
-            visited.add(identifier)
+            if first_focused_forward is None:
+                first_focused_forward = elem_id
 
-            if active.tag_name.lower() == "body":
-                continue
+            visited.add(elem_id or identifier)
 
             details = get_element_details(active)
             forward_order.append(details)
@@ -113,31 +165,57 @@ if __name__ == "__main__":
         print("=" * 60)
 
         visited_backward = set()
-        actions = ActionChains(driver)
+        first_focused_backward = None
+        prev_backward_id = None
+        backward_stagnant_count = 0
 
         for i in range(TAB_LIMIT):
             actions.key_down(Keys.SHIFT).send_keys(Keys.TAB).key_up(Keys.SHIFT).perform()
             time.sleep(WAIT_TIME)
 
-            active = driver.switch_to.active_element
-            identifier = (
-                active.tag_name,
-                active.get_attribute("id"),
-                active.get_attribute("name"),
-                active.get_attribute("href"),
-                active.get_attribute("class"),
-                active.text.strip(),
-            )
+            try:
+                active = driver.switch_to.active_element
+            except Exception:
+                continue
 
-            if identifier in visited_backward:
-                print("\nReached an already focused element.")
+            elem_id = getattr(active, "id", None)
+            identifier = get_traversal_element_identifier(active)
+            if not identifier:
+                continue
+
+            tag = (active.tag_name or "").lower()
+            if tag in ("body", "html"):
+                prev_backward_id = elem_id
+                backward_stagnant_count = 0
+                continue
+
+            # Stagnation detection (focus stayed on the exact same element)
+            if elem_id and elem_id == prev_backward_id:
+                backward_stagnant_count += 1
+                if backward_stagnant_count == 1:
+                    try:
+                        actions.send_keys(Keys.ESCAPE).perform()
+                        time.sleep(0.3)
+                    except Exception:
+                        pass
+                elif backward_stagnant_count >= 3:
+                    print(f"\nFocus trapped on element <{tag}> for {backward_stagnant_count} consecutive steps. Backward traversal completed.")
+                    break
+            else:
+                backward_stagnant_count = 0
+
+            prev_backward_id = elem_id
+
+            # Loop detection: only if focus returns to the first backward element after visiting >= 5 distinct elements
+            if first_focused_backward and elem_id == first_focused_backward and len(visited_backward) >= 5:
+                print("\nReached wrap-around back to initial element.")
                 print("Backward traversal completed.")
                 break
 
-            visited_backward.add(identifier)
+            if first_focused_backward is None:
+                first_focused_backward = elem_id
 
-            if active.tag_name.lower() == "body":
-                continue
+            visited_backward.add(elem_id or identifier)
 
             details = get_element_details(active)
             backward_order.append(details)

@@ -121,6 +121,32 @@ def get_element_details(element):
         }
 
 
+def get_traversal_element_identifier(element):
+    """
+    Construct a collision-free identifier for DOM elements during keyboard traversal.
+    Uses Selenium W3C element node ID as primary unique key, supplemented with
+    DOM attributes (tag, id, name, type, placeholder, aria-label, href, class, text, value).
+    """
+    try:
+        elem_id = getattr(element, "id", None) or ""
+        tag = (element.tag_name or "").lower()
+        dom_id = element.get_attribute("id") or ""
+        name = element.get_attribute("name") or ""
+        input_type = (element.get_attribute("type") or "").lower() if tag == "input" else ""
+        placeholder = element.get_attribute("placeholder") or ""
+        aria_label = element.get_attribute("aria-label") or ""
+        title = element.get_attribute("title") or ""
+        href = element.get_attribute("href") or ""
+        cls = element.get_attribute("class") or ""
+        text = (element.text or "").strip()
+        val = element.get_attribute("value") or ""
+        return (elem_id, tag, dom_id, name, input_type, placeholder, aria_label, title, href, cls, text, val)
+    except StaleElementReferenceException:
+        return None
+    except Exception:
+        return None
+
+
 def get_candidate_names(selenium_element):
     """Return all possible accessible names associated with the DOM element."""
     candidates = []
@@ -296,6 +322,9 @@ if __name__ == "__main__":
 
         # FORWARD TRAVERSAL
         visited_forward = set()
+        first_focused_forward = None
+        prev_forward_id = None
+        forward_stagnant_count = 0
 
         print("\n" + "=" * 70)
         print("FORWARD SYNCHRONIZED TRAVERSAL (TRAVERSAL_READY)")
@@ -311,25 +340,49 @@ if __name__ == "__main__":
 
             try:
                 active = driver.switch_to.active_element
-                identifier = (
-                    active.tag_name,
-                    active.get_attribute("id"),
-                    active.get_attribute("name"),
-                    active.get_attribute("href"),
-                    active.get_attribute("class"),
-                    (active.text or "").strip(),
-                )
             except StaleElementReferenceException:
                 continue
 
-            if identifier in visited_forward:
-                print("\nReached an already visited element. Forward traversal completed.")
+            elem_id = getattr(active, "id", None)
+            identifier = get_traversal_element_identifier(active)
+            if not identifier:
+                continue
+
+            tag = (active.tag_name or "").lower()
+            if tag in ("body", "html"):
+                prev_forward_id = elem_id
+                forward_stagnant_count = 0
+                time.sleep(TRAVERSAL_DELAY)
+                continue
+
+            # Stagnation detection (focus stayed on the exact same element)
+            if elem_id and elem_id == prev_forward_id:
+                forward_stagnant_count += 1
+                if forward_stagnant_count == 1:
+                    # An open flyout, dropdown, or modal may be intercepting keys.
+                    # Send ESCAPE to dismiss popups and free focus.
+                    try:
+                        actions.send_keys(Keys.ESCAPE).perform()
+                        time.sleep(0.3)
+                    except Exception:
+                        pass
+                elif forward_stagnant_count >= 3:
+                    print(f"\nFocus trapped on element <{tag}> for {forward_stagnant_count} consecutive steps. Forward traversal completed.")
+                    break
+            else:
+                forward_stagnant_count = 0
+
+            prev_forward_id = elem_id
+
+            # Loop detection: only if focus returns to the first focused element after visiting >= 5 distinct elements
+            if first_focused_forward and elem_id == first_focused_forward and len(visited_forward) >= 5:
+                print(f"\nReached wrap-around back to initial element at step {step}. Forward traversal completed.")
                 break
 
-            visited_forward.add(identifier)
+            if first_focused_forward is None:
+                first_focused_forward = elem_id
 
-            if active.tag_name.lower() == "body":
-                continue
+            visited_forward.add(elem_id or identifier)
 
             selenium_details = get_element_details(active)
             result = capture_synchronized_element(
@@ -354,6 +407,9 @@ if __name__ == "__main__":
 
         # BACKWARD TRAVERSAL
         visited_backward = set()
+        first_focused_backward = None
+        prev_backward_id = None
+        backward_stagnant_count = 0
 
         print("\n\n" + "=" * 70)
         print("BACKWARD SYNCHRONIZED TRAVERSAL")
@@ -369,25 +425,49 @@ if __name__ == "__main__":
 
             try:
                 active = driver.switch_to.active_element
-                identifier = (
-                    active.tag_name,
-                    active.get_attribute("id"),
-                    active.get_attribute("name"),
-                    active.get_attribute("href"),
-                    active.get_attribute("class"),
-                    (active.text or "").strip(),
-                )
             except StaleElementReferenceException:
                 continue
 
-            if identifier in visited_backward:
-                print("\nReached an already visited element. Backward traversal completed.")
+            elem_id = getattr(active, "id", None)
+            identifier = get_traversal_element_identifier(active)
+            if not identifier:
+                continue
+
+            tag = (active.tag_name or "").lower()
+            if tag in ("body", "html"):
+                prev_backward_id = elem_id
+                backward_stagnant_count = 0
+                time.sleep(TRAVERSAL_DELAY)
+                continue
+
+            # Stagnation detection (focus stayed on the exact same element)
+            if elem_id and elem_id == prev_backward_id:
+                backward_stagnant_count += 1
+                if backward_stagnant_count == 1:
+                    # An open flyout, dropdown, or modal may be intercepting keys.
+                    # Send ESCAPE to dismiss popups and free focus.
+                    try:
+                        actions.send_keys(Keys.ESCAPE).perform()
+                        time.sleep(0.3)
+                    except Exception:
+                        pass
+                elif backward_stagnant_count >= 3:
+                    print(f"\nFocus trapped on element <{tag}> for {backward_stagnant_count} consecutive steps. Backward traversal completed.")
+                    break
+            else:
+                backward_stagnant_count = 0
+
+            prev_backward_id = elem_id
+
+            # Loop detection: only if focus returns to the first backward element after visiting >= 5 distinct elements
+            if first_focused_backward and elem_id == first_focused_backward and len(visited_backward) >= 5:
+                print(f"\nReached wrap-around back to initial backward element at step {step}. Backward traversal completed.")
                 break
 
-            visited_backward.add(identifier)
+            if first_focused_backward is None:
+                first_focused_backward = elem_id
 
-            if active.tag_name.lower() == "body":
-                continue
+            visited_backward.add(elem_id or identifier)
 
             selenium_details = get_element_details(active)
             result = capture_synchronized_element(

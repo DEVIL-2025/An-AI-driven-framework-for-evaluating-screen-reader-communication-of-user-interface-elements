@@ -9,23 +9,48 @@ import argparse
 import unittest
 
 
-def run_live_listener(enable_ai=True):
-    """Interactive Mode: Listens to NVDA announcements live as the user navigates."""
+def run_live_listener(url=None, enable_ai=True, screenshot_path=None, output_dir=None):
+    """
+    Interactive Mode: Listens to NVDA announcements live as the user navigates.
+    Supports optional target URL (auto-opens browser), visual evidence capture
+    (screenshot & DOM snapshot), unified evidence package assembly, and multimodal AI analysis.
+    """
     import time
     import json
     from tools.nvda_tool import NVDATextExtractor
     from tools.nvda_filter import NVDAFilter
     from tools.nvda_parser import NVDAParser
     from tools.nvda_classifier import NVDAClassifier
-    from tools.ai_agent import AIAccessibilityAgent
+    from tools.ai_agent import AIAccessibilityAnalyzer
+    from tools.screenshot_capture import capture_webpage_screenshot, get_image_dimensions
+    from tools.dom_extractor import extract_dom_snapshot
+    from tools.evidence_correlator import assemble_unified_evidence_package
 
     READ_DELAY = 1
     POLL_DELAY = 0.2
 
-    print("\n" + "=" * 60)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    log_path = os.path.join(output_dir, "nvda_log.txt") if output_dir else "nvda_log.txt"
+    elements_path = os.path.join(output_dir, "website_elements.json") if output_dir else "website_elements.json"
+    sync_path = os.path.join(output_dir, "synchronized_output.json") if output_dir else "synchronized_output.json"
+    ai_rep_path = os.path.join(output_dir, "ai_accessibility_report.json") if output_dir else "ai_accessibility_report.json"
+    screenshot_meta_path = os.path.join(output_dir, "screenshot_metadata.json") if output_dir else "screenshot_metadata.json"
+    dom_snapshot_path = os.path.join(output_dir, "dom_snapshot.json") if output_dir else "dom_snapshot.json"
+    unified_pkg_path = os.path.join(output_dir, "unified_evidence_package.json") if output_dir else "unified_evidence_package.json"
+
+    resolved_screenshot_path = screenshot_path or (os.path.join(output_dir, "webpage_screenshot.png") if output_dir else "webpage_screenshot.png")
+
+    print("\n" + "=" * 70)
     print("MODE: LIVE INTERACTIVE NVDA LISTENER")
-    print("=" * 60)
-    print("Listening to NVDA Speech Viewer... (Press Ctrl+C to stop)\n")
+    print("=" * 70)
+    if url:
+        print(f"Target URL     : {url}")
+    print(f"AI Audit       : {'Enabled (Multimodal Gemini)' if enable_ai else 'Disabled'}")
+    if output_dir:
+        print(f"Output Dir     : {output_dir}")
+    print("=" * 70)
 
     try:
         extractor = NVDATextExtractor()
@@ -37,9 +62,29 @@ def run_live_listener(enable_ai=True):
     filter_tool = NVDAFilter()
     parser = NVDAParser()
     classifier = NVDAClassifier()
+    driver = None
+    dom_snapshot = {}
+    screenshot_metadata = {"status": "FAILED", "error": "Screenshot capture not attempted"}
 
-    with open("nvda_log.txt", "w", encoding="utf-8") as log:
-        try:
+    try:
+        if url:
+            from selenium import webdriver
+            print("\nLaunching Chrome browser for manual navigation...")
+            driver = webdriver.Chrome()
+            driver.maximize_window()
+            extractor.mark_baseline()
+            print(f"[PAGE] Navigating to target URL: {url}")
+            driver.get(url)
+            print("[NVDA] Draining pre-interaction page initialization speech...")
+            initial_speech, is_settled = extractor.drain_initial_speech(from_baseline=True)
+            print(f"[NVDA] Baseline established ({len(initial_speech)} chars drained, settled={is_settled}).")
+            print("Browser is ready! You can manually navigate (Tab, Shift+Tab, Arrows, Mouse).")
+            print("NVDA speech is being captured live. Press Ctrl+C when finished.\n")
+        else:
+            extractor.mark_baseline()
+            print("Listening to NVDA Speech Viewer... (Press Ctrl+C to stop)\n")
+
+        with open(log_path, "w", encoding="utf-8") as log:
             while True:
                 text = extractor.get_new_text()
 
@@ -48,7 +93,7 @@ def run_live_listener(enable_ai=True):
                     events = parser.parse(cleaned)
 
                     classifier.classify(events)
-                    classifier.save()
+                    classifier.save(filename=elements_path)
 
                     for event in events:
                         print("-" * 50)
@@ -62,86 +107,210 @@ def run_live_listener(enable_ai=True):
                 else:
                     time.sleep(POLL_DELAY)
 
-        except KeyboardInterrupt:
-            print("\n" + "=" * 70)
-            print("STOPPED LIVE LISTENING. RUNNING WCAG ACCESSIBILITY ANALYSIS...")
-            print("=" * 70)
+    except KeyboardInterrupt:
+        print("\n" + "=" * 70)
+        print("STOPPED LIVE LISTENING. COLLECTING VISUAL EVIDENCE & RUNNING AI AUDIT...")
+        print("=" * 70)
 
-            # Package live captured elements for WCAG analysis
-            live_data = {
-                "url": "Live Manual Interaction Session",
-                "forward": [
-                    {
-                        "selenium": {
-                            "tag": ev.get("role", "a"),
-                            "text": ev.get("name", ""),
-                            "aria-label": ev.get("name", "") if ev.get("name") else None,
-                        },
-                        "nvda": ev,
+        # Step 1: Capture or extract visual evidence & DOM snapshot
+        if driver is not None:
+            print("\nCapturing visual evidence from active browser session...")
+            try:
+                dom_snapshot = extract_dom_snapshot(driver)
+            except Exception as dom_err:
+                dom_snapshot = {"error": str(dom_err), "headings": [], "landmarks": [], "sections": [], "interactive_elements": []}
+
+            try:
+                screenshot_metadata = capture_webpage_screenshot(
+                    driver,
+                    output_path=resolved_screenshot_path,
+                    output_dir=output_dir,
+                )
+                if screenshot_metadata.get("status") == "SUCCESS":
+                    print(f"Screenshot captured: {screenshot_metadata.get('path')} ({screenshot_metadata.get('width')}x{screenshot_metadata.get('height')}, mode: {screenshot_metadata.get('capture_mode')})")
+                else:
+                    print(f"Screenshot capture notice: {screenshot_metadata.get('error')}")
+            except Exception as ss_err:
+                screenshot_metadata = {"status": "FAILED", "error": str(ss_err)}
+
+            print("Closing browser window...")
+            try:
+                driver.quit()
+            except Exception:
+                pass
+        else:
+            # Standalone manual mode (no Selenium driver)
+            if resolved_screenshot_path and os.path.exists(resolved_screenshot_path):
+                try:
+                    with open(resolved_screenshot_path, "rb") as ss_f:
+                        ss_bytes = ss_f.read()
+                    w, h = get_image_dimensions(ss_bytes)
+                    screenshot_metadata = {
+                        "status": "SUCCESS",
+                        "path": resolved_screenshot_path,
+                        "filename": os.path.basename(resolved_screenshot_path),
+                        "width": w,
+                        "height": h,
+                        "capture_mode": "MANUAL_IMAGE_EVIDENCE",
+                        "has_fixed_elements": False,
                     }
-                    for ev in classifier.website_elements
-                ],
-                "backward": [],
-            }
-
-            if enable_ai:
-                print("\n" + "=" * 70)
-                print("MODE: AI-POWERED ACCESSIBILITY VIOLATION DETECTION (GEMINI)")
-                print("=" * 70)
-                ai_analyzer = AIAccessibilityAgent()
-                ai_report = ai_analyzer.analyze_synchronized_evidence(live_data)
-                ai_analyzer.save_ai_report(ai_report, "ai_accessibility_report.json")
-                ai_dict = ai_report.to_dict()
-                summary = ai_dict.get("summary", {})
-
-                print(f"\nAI Accessibility Assessment Score: {summary.get('compliance_score', 100.0)}%")
-                print(f"Total Unique Elements Captured   : {summary.get('total_elements_analyzed', 0)}")
-                print(f"Total AI Violations Detected     : {summary.get('total_violations', 0)}")
-                print(f"Total Recommendations Provided   : {summary.get('total_recommendations', 0)}")
-                sev = summary.get("severity_summary", {})
-                print(f"Severity Breakdown               : Critical={sev.get('CRITICAL', 0)}, Major={sev.get('MAJOR', 0)}, Minor={sev.get('MINOR', 0)}, Info={sev.get('INFO', 0)}")
-                print(f"AI Analysis Status               : {ai_report.analysis_status} (Model: {ai_report.ai_metadata.get('model')})")
-
-                if ai_report.violations:
-                    print("\nTOP AI ACCESSIBILITY VIOLATIONS DETECTED:")
-                    for idx, v in enumerate(ai_report.violations[:5], 1):
-                        print(f"  {idx}. [{v.severity}] {v.rule_id} - {v.title} (Confidence: {v.confidence})")
-                        print(f"     Impact      : {v.user_impact[:100]}...")
-                        print(f"     Remediation : {v.developer_guidance[:100]}...")
-
-                if hasattr(ai_report, "recommendations") and ai_report.recommendations:
-                    print("\nACCESSIBILITY RECOMMENDATIONS & BEST PRACTICES:")
-                    for idx, r in enumerate(ai_report.recommendations[:5], 1):
-                        print(f"  {idx}. [{r.category}] {r.title}")
-                        print(f"     Impact      : {r.user_impact[:100]}...")
-                        print(f"     Guidance    : {r.developer_guidance[:100]}...")
+                    print(f"Loaded existing visual evidence: {resolved_screenshot_path} ({w}x{h})")
+                except Exception as img_err:
+                    screenshot_metadata = {"status": "FAILED", "error": str(img_err)}
             else:
-                print("\n" + "=" * 70)
-                print("AI ACCESSIBILITY AUDIT DISABLED")
-                print("=" * 70)
-                print("AI violation analysis was not requested (enable_ai=False).")
-                unavailable_report = {
-                    "analysis_type": "AI_ACCESSIBILITY_ANALYSIS",
-                    "analysis_status": "AI_ANALYSIS_UNAVAILABLE",
-                    "url": "Live Manual Interaction Session",
-                    "summary": {
-                        "total_elements_analyzed": len(classifier.website_elements),
-                        "total_violations": 0,
-                        "compliance_score": 0.0,
-                        "severity_summary": {"CRITICAL": 0, "MAJOR": 0, "MINOR": 0, "INFO": 0},
-                    },
-                    "violations": [],
-                    "ai_metadata": {"reason": "AI analysis was explicitly disabled."},
-                }
-                with open("ai_accessibility_report.json", "w", encoding="utf-8") as f:
-                    json.dump(unavailable_report, f, indent=4, ensure_ascii=False)
+                screenshot_metadata = {"status": "FAILED", "error": "No screenshot provided or captured for manual session."}
 
+            if os.path.exists(dom_snapshot_path):
+                try:
+                    with open(dom_snapshot_path, "r", encoding="utf-8") as f:
+                        dom_snapshot = json.load(f)
+                except Exception:
+                    dom_snapshot = {"headings": [], "landmarks": [], "sections": [], "interactive_elements": []}
+            else:
+                dom_snapshot = {"headings": [], "landmarks": [], "sections": [], "interactive_elements": []}
+
+        # Step 2: Save DOM snapshot and screenshot metadata
+        try:
+            with open(screenshot_meta_path, "w", encoding="utf-8") as f:
+                json.dump(screenshot_metadata, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"Warning: could not save screenshot metadata: {e}")
+
+        try:
+            with open(dom_snapshot_path, "w", encoding="utf-8") as f:
+                json.dump(dom_snapshot, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"Warning: could not save DOM snapshot: {e}")
+
+        # Step 3: Package live captured elements into synchronized output
+        live_elements = []
+        for idx, ev in enumerate(classifier.website_elements, 1):
+            role = ev.get("role", "generic")
+            name = ev.get("name", "")
+            tag_guess = "a" if role in ("link", "graphic link") else ("button" if role in ("button", "menu button") else ("input" if role in ("edit", "checkbox", "radio button") else "div"))
+            live_elements.append({
+                "step": idx,
+                "selenium": {
+                    "tag": tag_guess,
+                    "text": name,
+                    "aria-label": name if name else None,
+                    "id": "",
+                    "name": "",
+                    "class": "",
+                    "role": role,
+                    "type": "text" if role == "edit" else None,
+                    "expected_roles": [role] if role else [],
+                },
+                "nvda": ev,
+                "comparison": {
+                    "status": "MATCH",
+                    "tag": tag_guess,
+                    "nvda_role": role,
+                    "dom_text": name,
+                    "nvda_name": name,
+                },
+            })
+
+        synchronized_output = {
+            "url": url or "Live Manual Interaction Session",
+            "initialization": None,
+            "forward": live_elements,
+            "backward": [],
+        }
+
+        with open(sync_path, "w", encoding="utf-8") as f:
+            json.dump(synchronized_output, f, indent=4, ensure_ascii=False)
+
+        # Step 4: Assemble unified evidence package (correlating DOM, NVDA, and screenshot)
+        unified_package = {}
+        try:
+            unified_package = assemble_unified_evidence_package(
+                url=url or "Live Manual Interaction Session",
+                synchronized_output=synchronized_output,
+                dom_snapshot=dom_snapshot,
+                screenshot_metadata=screenshot_metadata,
+            )
+            with open(unified_pkg_path, "w", encoding="utf-8") as f:
+                json.dump(unified_package, f, indent=4, ensure_ascii=False)
+            corr_summary = unified_package.get("correlation_summary", {})
+            print(f"Unified evidence package assembled: {corr_summary.get('matched_count', 0)}/{corr_summary.get('total_synchronized_elements', 0)} elements matched.")
+        except Exception as corr_err:
+            print(f"Warning: could not assemble unified evidence package: {corr_err}")
+
+        # Step 5: Primary Accessibility Analysis (Multimodal AI Gemini)
+        if enable_ai:
             print("\n" + "=" * 70)
-            print("Outputs saved:")
-            print("  - nvda_log.txt (Stream of all captured live speech events)")
-            print("  - website_elements.json (Unique website elements captured)")
-            print("  - ai_accessibility_report.json (AI Accessibility Violation Report)")
+            print("PRIMARY ACCESSIBILITY ANALYSIS: AI ACCESSIBILITY ANALYZER (GEMINI)")
             print("=" * 70)
+            ai_analyzer = AIAccessibilityAnalyzer()
+            valid_ss_path = resolved_screenshot_path if screenshot_metadata.get("status") == "SUCCESS" else None
+            ai_report = ai_analyzer.analyze_synchronized_evidence(
+                synchronized_output,
+                unified_package=unified_package,
+                screenshot_path=valid_ss_path,
+                screenshot_metadata=screenshot_metadata,
+                output_dir=output_dir,
+            )
+            ai_analyzer.save_ai_report(ai_report, ai_rep_path)
+            ai_dict = ai_report.to_dict()
+            summary = ai_dict.get("summary", {})
+
+            print(f"\nAI Accessibility Assessment Score: {summary.get('compliance_score', 100.0)}%")
+            print(f"Total Unique Elements Captured   : {summary.get('total_elements_analyzed', len(classifier.website_elements))}")
+            print(f"Total AI Violations Detected     : {summary.get('total_violations', 0)}")
+            print(f"Total Recommendations Provided   : {summary.get('total_recommendations', 0)}")
+            sev = summary.get("severity_summary", {})
+            print(f"Severity Breakdown               : Critical={sev.get('CRITICAL', 0)}, Major={sev.get('MAJOR', 0)}, Minor={sev.get('MINOR', 0)}, Info={sev.get('INFO', 0)}")
+            print(f"AI Analysis Status               : {ai_report.analysis_status} (Model: {ai_report.ai_metadata.get('model')})")
+
+            if ai_report.violations:
+                print("\nTOP AI ACCESSIBILITY VIOLATIONS DETECTED:")
+                for idx, v in enumerate(ai_report.violations[:5], 1):
+                    print(f"  {idx}. [{v.severity}] {v.rule_id} - {v.title} (Confidence: {v.confidence})")
+                    print(f"     Impact      : {v.user_impact[:100]}...")
+                    print(f"     Remediation : {v.recommendation[:100]}...")
+
+            if hasattr(ai_report, "recommendations") and ai_report.recommendations:
+                print("\nACCESSIBILITY RECOMMENDATIONS & BEST PRACTICES:")
+                for idx, r in enumerate(ai_report.recommendations[:5], 1):
+                    print(f"  {idx}. [{r.category}] {r.title}")
+                    print(f"     Impact      : {r.user_impact[:100]}...")
+                    print(f"     Guidance    : {r.developer_guidance[:100]}...")
+        else:
+            print("\n" + "=" * 70)
+            print("AI ACCESSIBILITY AUDIT DISABLED")
+            print("=" * 70)
+            print("AI violation analysis was not requested (enable_ai=False).")
+            unavailable_report = {
+                "analysis_type": "AI_ACCESSIBILITY_ANALYSIS",
+                "analysis_status": "AI_ANALYSIS_UNAVAILABLE",
+                "url": url or "Live Manual Interaction Session",
+                "summary": {
+                    "total_elements_analyzed": len(classifier.website_elements),
+                    "total_violations": 0,
+                    "total_recommendations": 0,
+                    "compliance_score": 0.0,
+                    "severity_summary": {"CRITICAL": 0, "MAJOR": 0, "MINOR": 0, "INFO": 0},
+                },
+                "violations": [],
+                "recommendations": [],
+                "ai_metadata": {"reason": "AI analysis was explicitly disabled."},
+            }
+            with open(ai_rep_path, "w", encoding="utf-8") as f:
+                json.dump(unavailable_report, f, indent=4, ensure_ascii=False)
+
+        print("\n" + "=" * 70)
+        print("Outputs saved:")
+        print(f"  - {log_path} (Stream of all captured live speech events)")
+        print(f"  - {elements_path} (Unique website elements captured)")
+        print(f"  - {sync_path} (DOM + Screen Reader Synchronized Data)")
+        print(f"  - {screenshot_meta_path} (Screenshot Metadata)")
+        if screenshot_metadata.get("status") == "SUCCESS":
+            print(f"  - {screenshot_metadata.get('path')} (Webpage Screenshot Evidence)")
+        print(f"  - {dom_snapshot_path} (DOM Semantic/Structural Snapshot)")
+        print(f"  - {unified_pkg_path} (Unified Multimodal Evidence Package)")
+        print(f"  - {ai_rep_path} (AI Accessibility Violation Report)")
+        print("=" * 70)
 
 
 def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
@@ -151,6 +320,7 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
     from synchronisation.sync import (
         capture_synchronized_element,
         get_element_details,
+        get_traversal_element_identifier,
     )
     from tools.nvda_tool import NVDATextExtractor
     from tools.nvda_filter import NVDAFilter
@@ -233,6 +403,9 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
         # Forward Traversal
         visited_forward = set()
+        first_focused_forward = None
+        prev_forward_id = None
+        forward_stagnant_count = 0
 
         print("\nStarting Forward Tab Traversal (TRAVERSAL_READY)...")
         for step in range(1, tab_limit + 1):
@@ -243,24 +416,49 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
             try:
                 active = driver.switch_to.active_element
-                identifier = (
-                    active.tag_name,
-                    active.get_attribute("id"),
-                    active.get_attribute("name"),
-                    active.get_attribute("href"),
-                    active.get_attribute("class"),
-                    (active.text or "").strip(),
-                )
             except StaleElementReferenceException:
                 continue
 
-            if identifier in visited_forward:
-                print(f"Reached loop/end of focusable elements at step {step}.")
+            elem_id = getattr(active, "id", None)
+            identifier = get_traversal_element_identifier(active)
+            if not identifier:
+                continue
+
+            tag = (active.tag_name or "").lower()
+            if tag in ("body", "html"):
+                prev_forward_id = elem_id
+                forward_stagnant_count = 0
+                time.sleep(TRAVERSAL_DELAY)
+                continue
+
+            # Stagnation detection (focus stayed on the exact same element)
+            if elem_id and elem_id == prev_forward_id:
+                forward_stagnant_count += 1
+                if forward_stagnant_count == 1:
+                    # An open flyout, dropdown, or modal may be intercepting keys.
+                    # Send ESCAPE to dismiss popups and free focus.
+                    try:
+                        actions.send_keys(Keys.ESCAPE).perform()
+                        time.sleep(0.3)
+                    except Exception:
+                        pass
+                elif forward_stagnant_count >= 3:
+                    print(f"Focus trapped on element <{tag}> for {forward_stagnant_count} consecutive steps. Forward traversal halted.")
+                    break
+            else:
+                forward_stagnant_count = 0
+
+            prev_forward_id = elem_id
+
+            # Loop detection: only if focus returns to the first focused element after visiting >= 5 distinct elements
+            if first_focused_forward and elem_id == first_focused_forward and len(visited_forward) >= 5:
+                print(f"Reached loop back to initial element at step {step}. Forward traversal completed.")
                 break
 
-            visited_forward.add(identifier)
-            if active.tag_name.lower() == "body":
-                continue
+            if first_focused_forward is None:
+                first_focused_forward = elem_id
+
+            visited_forward.add(elem_id or identifier)
 
             selenium_details = get_element_details(active)
             result = capture_synchronized_element(
@@ -283,6 +481,9 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
         # Backward Traversal
         visited_backward = set()
+        first_focused_backward = None
+        prev_backward_id = None
+        backward_stagnant_count = 0
 
         print("\nStarting Backward Shift+Tab Traversal...")
         for step in range(1, tab_limit + 1):
@@ -293,24 +494,49 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
             try:
                 active = driver.switch_to.active_element
-                identifier = (
-                    active.tag_name,
-                    active.get_attribute("id"),
-                    active.get_attribute("name"),
-                    active.get_attribute("href"),
-                    active.get_attribute("class"),
-                    (active.text or "").strip(),
-                )
             except StaleElementReferenceException:
                 continue
 
-            if identifier in visited_backward:
-                print(f"Reached loop/end of backward elements at step {step}.")
+            elem_id = getattr(active, "id", None)
+            identifier = get_traversal_element_identifier(active)
+            if not identifier:
+                continue
+
+            tag = (active.tag_name or "").lower()
+            if tag in ("body", "html"):
+                prev_backward_id = elem_id
+                backward_stagnant_count = 0
+                time.sleep(TRAVERSAL_DELAY)
+                continue
+
+            # Stagnation detection (focus stayed on the exact same element)
+            if elem_id and elem_id == prev_backward_id:
+                backward_stagnant_count += 1
+                if backward_stagnant_count == 1:
+                    # An open flyout, dropdown, or modal may be intercepting keys.
+                    # Send ESCAPE to dismiss popups and free focus.
+                    try:
+                        actions.send_keys(Keys.ESCAPE).perform()
+                        time.sleep(0.3)
+                    except Exception:
+                        pass
+                elif backward_stagnant_count >= 3:
+                    print(f"Focus trapped on element <{tag}> for {backward_stagnant_count} consecutive steps. Backward traversal halted.")
+                    break
+            else:
+                backward_stagnant_count = 0
+
+            prev_backward_id = elem_id
+
+            # Loop detection: only if focus returns to the first backward element after visiting >= 5 distinct elements
+            if first_focused_backward and elem_id == first_focused_backward and len(visited_backward) >= 5:
+                print(f"Reached loop back to initial backward element at step {step}. Backward traversal completed.")
                 break
 
-            visited_backward.add(identifier)
-            if active.tag_name.lower() == "body":
-                continue
+            if first_focused_backward is None:
+                first_focused_backward = elem_id
+
+            visited_backward.add(elem_id or identifier)
 
             selenium_details = get_element_details(active)
             result = capture_synchronized_element(
@@ -546,6 +772,10 @@ def run_unit_tests():
     from tests.test_validation_irctc import TestIRCTCValidationCase
     from tests.test_nvda_synchronization import TestNVDASynchronizationLifecycle
     from tests.test_audit_evidence_pipeline import TestAuditEvidencePipeline
+    from tests.test_traversal_and_live_listener import (
+        TestTraversalIdentifierAndStagnation,
+        TestLiveListenerVisualEvidence,
+    )
 
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
@@ -560,6 +790,8 @@ def run_unit_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestIRCTCValidationCase))
     suite.addTests(loader.loadTestsFromTestCase(TestNVDASynchronizationLifecycle))
     suite.addTests(loader.loadTestsFromTestCase(TestAuditEvidencePipeline))
+    suite.addTests(loader.loadTestsFromTestCase(TestTraversalIdentifierAndStagnation))
+    suite.addTests(loader.loadTestsFromTestCase(TestLiveListenerVisualEvidence))
 
     runner = unittest.TextTestRunner(verbosity=2)
     runner.run(suite)
@@ -598,16 +830,40 @@ def main():
         action="store_true",
         help="Disable AI accessibility analysis (evidence collection only)",
     )
+    parser.add_argument(
+        "--screenshot",
+        "-s",
+        type=str,
+        default=None,
+        help="Path to webpage screenshot image for visual evidence in live/manual mode",
+    )
+    parser.add_argument(
+        "--output-dir",
+        "-o",
+        type=str,
+        default=None,
+        help="Directory to save audit output artifacts",
+    )
 
     args = parser.parse_args()
 
     if args.test:
         run_unit_tests()
     elif args.live:
-        run_live_listener(enable_ai=True)
+        run_live_listener(
+            url=args.url,
+            enable_ai=not args.no_ai,
+            screenshot_path=args.screenshot,
+            output_dir=args.output_dir,
+        )
     elif args.url:
         try:
-            run_automated_audit(args.url, tab_limit=args.limit, enable_ai=not args.no_ai)
+            run_automated_audit(
+                args.url,
+                tab_limit=args.limit,
+                enable_ai=not args.no_ai,
+                output_dir=args.output_dir,
+            )
         except RuntimeError:
             sys.exit(1)
     else:
