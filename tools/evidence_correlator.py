@@ -499,6 +499,7 @@ def assemble_unified_evidence_package(
     synchronized_output: Dict[str, Any],
     dom_snapshot: Dict[str, Any],
     screenshot_metadata: Optional[Dict[str, Any]] = None,
+    pre_audit_stabilization: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Assembles a complete, unified multimodal evidence package combining:
@@ -579,6 +580,13 @@ def assemble_unified_evidence_package(
             "match_rate_percent": match_rate,
         },
     }
+
+    # Preserve pre-audit stabilization metadata if available (Phase 3C)
+    stab_meta = pre_audit_stabilization or (
+        init_data.get("stabilization") if isinstance(init_data, dict) else None
+    )
+    if stab_meta:
+        unified_package["pre_audit_stabilization"] = copy.deepcopy(stab_meta)
 
     logger.info(
         f"Unified evidence package assembled for {url}: {matched_count}/{total_count} matched ({match_rate}%), "

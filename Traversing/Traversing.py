@@ -76,7 +76,12 @@ if __name__ == "__main__":
 
     print(f"Target URL: {URL}")
 
-    driver = webdriver.Chrome()
+    try:
+        from tools.pre_audit_stabilizer import PreAuditStabilizer, get_safe_chrome_options
+        driver = webdriver.Chrome(options=get_safe_chrome_options())
+    except Exception:
+        driver = webdriver.Chrome()
+
     forward_order = []
     backward_order = []
 
@@ -84,13 +89,21 @@ if __name__ == "__main__":
         driver.maximize_window()
 
         def reset_page():
-            """Reload the page and place focus on the body."""
+            """Reload the page, stabilize, and place focus on the body."""
             driver.get(URL)
+            try:
+                from tools.pre_audit_stabilizer import PreAuditStabilizer
+                PreAuditStabilizer().stabilize(driver)
+            except Exception:
+                pass
             time.sleep(WAIT_TIME)
 
-            body = driver.find_element(By.TAG_NAME, "body")
-            body.click()
-            return body
+            try:
+                from tools.pre_audit_stabilizer import prepare_for_keyboard_traversal
+                prepare_for_keyboard_traversal(driver)
+            except Exception:
+                pass
+            return driver.find_element(By.TAG_NAME, "body")
 
         # FORWARD TAB TRAVERSAL
         body = reset_page()
@@ -105,8 +118,17 @@ if __name__ == "__main__":
         forward_stagnant_count = 0
         actions = ActionChains(driver)
 
+        from tools.pre_audit_stabilizer import focus_first_focusable_element
+
         for i in range(TAB_LIMIT):
-            actions.send_keys(Keys.TAB).perform()
+            step = i + 1
+            if step == 1:
+                # Step 1: Programmatically focus the first focusable element in DOM order
+                first_el = focus_first_focusable_element(driver)
+                if not first_el:
+                    actions.send_keys(Keys.TAB).perform()
+            else:
+                actions.send_keys(Keys.TAB).perform()
             time.sleep(WAIT_TIME)
 
             try:

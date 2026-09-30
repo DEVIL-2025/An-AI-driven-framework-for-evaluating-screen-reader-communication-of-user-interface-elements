@@ -69,12 +69,30 @@ def run_live_listener(url=None, enable_ai=True, screenshot_path=None, output_dir
     try:
         if url:
             from selenium import webdriver
+            from tools.pre_audit_stabilizer import PreAuditStabilizer, get_safe_chrome_options
             print("\nLaunching Chrome browser for manual navigation...")
-            driver = webdriver.Chrome()
+            chrome_options = get_safe_chrome_options()
+            driver = webdriver.Chrome(options=chrome_options)
             driver.maximize_window()
             extractor.mark_baseline()
             print(f"[PAGE] Navigating to target URL: {url}")
             driver.get(url)
+
+            # PRE-AUDIT STABILIZATION (Phase 3C)
+            print("\n[STABILIZER] Initializing pre-audit page stabilization...")
+            stabilizer = PreAuditStabilizer()
+            stabilization_meta = stabilizer.stabilize(driver)
+            print(
+                f"[STABILIZER] Page stabilization complete: status={stabilization_meta.get('status')}, "
+                f"dismissed={stabilization_meta.get('dismissed_count')}, "
+                f"remaining={stabilization_meta.get('remaining_dialog_count')}, "
+                f"time={stabilization_meta.get('stabilization_duration_ms')}ms"
+            )
+
+            # Clear stale NVDA speech produced during page load & popup dismissal
+            print("[STABILIZER] Resetting NVDA capture baseline...")
+            extractor.reset_capture_baseline()
+
             print("[NVDA] Draining pre-interaction page initialization speech...")
             initial_speech, is_settled = extractor.drain_initial_speech(from_baseline=True)
             print(f"[NVDA] Baseline established ({len(initial_speech)} chars drained, settled={is_settled}).")
@@ -213,7 +231,10 @@ def run_live_listener(url=None, enable_ai=True, screenshot_path=None, output_dir
 
         synchronized_output = {
             "url": url or "Live Manual Interaction Session",
-            "initialization": None,
+            "initialization": {
+                "phase": "PAGE_INITIALIZATION",
+                "stabilization": locals().get("stabilization_meta"),
+            } if locals().get("stabilization_meta") else None,
             "forward": live_elements,
             "backward": [],
         }
@@ -229,6 +250,7 @@ def run_live_listener(url=None, enable_ai=True, screenshot_path=None, output_dir
                 synchronized_output=synchronized_output,
                 dom_snapshot=dom_snapshot,
                 screenshot_metadata=screenshot_metadata,
+                pre_audit_stabilization=locals().get("stabilization_meta"),
             )
             with open(unified_pkg_path, "w", encoding="utf-8") as f:
                 json.dump(unified_package, f, indent=4, ensure_ascii=False)
@@ -357,7 +379,9 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
     parser = NVDAParser()
 
     print("\nLaunching Chrome...")
-    driver = webdriver.Chrome()
+    from tools.pre_audit_stabilizer import PreAuditStabilizer, get_safe_chrome_options
+    chrome_options = get_safe_chrome_options()
+    driver = webdriver.Chrome(options=chrome_options)
     forward_results = []
     backward_results = []
     all_raw_events = []
@@ -369,6 +393,21 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
         extractor.mark_baseline()
         print(f"[PAGE] Navigating to target URL: {url}")
         driver.get(url)
+
+        # PRE-AUDIT STABILIZATION (Phase 3C)
+        print("\n[STABILIZER] Initializing pre-audit page stabilization...")
+        stabilizer = PreAuditStabilizer()
+        stabilization_meta = stabilizer.stabilize(driver)
+        print(
+            f"[STABILIZER] Page stabilization complete: status={stabilization_meta.get('status')}, "
+            f"dismissed={stabilization_meta.get('dismissed_count')}, "
+            f"remaining={stabilization_meta.get('remaining_dialog_count')}, "
+            f"time={stabilization_meta.get('stabilization_duration_ms')}ms"
+        )
+
+        # Clear stale NVDA speech produced during page load & popup dismissal
+        print("[STABILIZER] Resetting NVDA capture baseline...")
+        extractor.reset_capture_baseline()
 
         # Explicit Lifecycle State: Drain pre-traversal page initialization speech
         print("[NVDA] Page loading. Draining pre-traversal speech buffer...")
@@ -393,6 +432,7 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
 
         initialization_data = {
             "phase": "PAGE_INITIALIZATION",
+            "stabilization": stabilization_meta,
             "raw_speech": initial_speech,
             "events": initial_events,
             "initial_focused_element": initial_focused_element,
@@ -407,12 +447,25 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
         prev_forward_id = None
         forward_stagnant_count = 0
 
+        # Reset focus to document start so traversal starts from the first focusable element
+        from tools.pre_audit_stabilizer import prepare_for_keyboard_traversal, focus_first_focusable_element
+        prepare_for_keyboard_traversal(driver)
+
         print("\nStarting Forward Tab Traversal (TRAVERSAL_READY)...")
         for step in range(1, tab_limit + 1):
-            def do_tab():
-                actions.send_keys(Keys.TAB).perform()
+            if step == 1:
+                # Step 1: Focus first visible focusable element on the page and capture its announcement
+                def do_first_focus():
+                    el = focus_first_focusable_element(driver)
+                    if not el:
+                        actions.send_keys(Keys.TAB).perform()
 
-            step_speech, capture_status = extractor.capture_action_response(do_tab)
+                step_speech, capture_status = extractor.capture_action_response(do_first_focus)
+            else:
+                def do_tab():
+                    actions.send_keys(Keys.TAB).perform()
+
+                step_speech, capture_status = extractor.capture_action_response(do_tab)
 
             try:
                 active = driver.switch_to.active_element
@@ -484,6 +537,9 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
         first_focused_backward = None
         prev_backward_id = None
         backward_stagnant_count = 0
+
+        # Reset focus to document root for clean backward traversal
+        prepare_for_keyboard_traversal(driver)
 
         print("\nStarting Backward Shift+Tab Traversal...")
         for step in range(1, tab_limit + 1):
@@ -631,6 +687,7 @@ def run_automated_audit(url, tab_limit=100, enable_ai=True, output_dir=None):
             synchronized_output=final_output,
             dom_snapshot=dom_snapshot,
             screenshot_metadata=screenshot_metadata,
+            pre_audit_stabilization=locals().get("stabilization_meta"),
         )
         with open(unified_pkg_path, "w", encoding="utf-8") as f:
             json.dump(unified_package, f, indent=4, ensure_ascii=False)

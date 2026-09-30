@@ -107,6 +107,20 @@ class NVDATextExtractor:
         logger.info(f"[NVDA] Baseline established at buffer offset {len(current)} chars.")
         return current
 
+    def reset_capture_baseline(self) -> str:
+        """
+        Explicitly reset the Speech Viewer capture baseline after page stabilization.
+        Marks all current text in Speech Viewer as already consumed so that announcements
+        generated during page load, popup appearance, popup dismissal, or initial focus
+        do not contaminate subsequent traversal capture or get_new_text() calls.
+        """
+        current = self.get_text()
+        self.baseline_text = current
+        self.previous_text = current
+        self.phase = NVDAEvidencePhase.BASELINE_ESTABLISHED
+        logger.info(f"[NVDA] Capture baseline reset after stabilization (offset={len(current)} chars).")
+        return current
+
     @property
     def last_mark(self) -> str:
         """Alias for the baseline boundary mark."""
