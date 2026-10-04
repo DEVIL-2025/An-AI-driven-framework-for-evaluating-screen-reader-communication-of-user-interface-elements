@@ -3,10 +3,15 @@
 
 # Generated Audit Reports
 reports/
-*.json
+/*.json
 !synchronized_output.json
 !accessibility_report.json
 !ai_enriched_report.json
+
+# Ensure frontend dependencies & configs are tracked
+!frontend/**/package.json
+!frontend/**/package-lock.json
+!frontend/**/.oxlintrc.json
 
 # Python bytecode & cache
 __pycache__/
